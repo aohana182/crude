@@ -232,8 +232,14 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
     const unitStrength = UNIT_STRENGTH[selHex.unitTier];
     const canAct = !selHex.unitMoved;
 
-    for (const [key, hex] of gameState.hexes) {
-      if (key === selectedKey) continue;
+    if (!canAct) return targets;
+
+    const neighbors = getNeighbors(gameState.selectedHex.q, gameState.selectedHex.r);
+
+    for (const n of neighbors) {
+      const key = hexKey(n.q, n.r);
+      const hex = gameState.hexes.get(key);
+      if (!hex || key === selectedKey) continue;
 
       if (hex.owner === gameState.currentPlayer) {
         const sameTerritory = isInSameTerritory(
@@ -257,18 +263,12 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
         } else if (hex.unitTier === null && !hex.hasCastle) {
           targets.set(key, 'move');
         }
-      } else if (canAct) {
-        const isNeighbor = getNeighbors(gameState.selectedHex.q, gameState.selectedHex.r)
-          .some(n => n.q === hex.q && n.r === hex.r);
-        if (!isNeighbor) continue;
-
-        if (hex.owner === null) {
+      } else if (hex.owner === null) {
+        targets.set(key, 'attack');
+      } else {
+        const defense = getHexDefenseStrength(hex.q, hex.r, gameState.hexes);
+        if (unitStrength > defense) {
           targets.set(key, 'attack');
-        } else {
-          const defense = getHexDefenseStrength(hex.q, hex.r, gameState.hexes);
-          if (unitStrength > defense) {
-            targets.set(key, 'attack');
-          }
         }
       }
     }
