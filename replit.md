@@ -2,6 +2,20 @@
 
 ## Version History
 
+### V2 — Balance Update (February 24, 2026)
+Major AI overhaul and economy rebalancing:
+- AI now expands up to 12 neutral hexes per turn (was 3)
+- AI buys up to 6 peasants per turn based on income (was 1-2)
+- AI attacks intelligently: prioritizes capitals, territory splits, and castles
+- AI combines units proactively when holding 4+ peasants or facing stronger enemies
+- AI moves interior units toward front lines via BFS pathfinding
+- AI can build multiple castles per territory (1 per 10 hexes)
+- AI does a second attack pass after buying/combining to use new units
+- Starting treasury reduced: max(income, 15) instead of max(income*3, 30)
+- Starting units per player increased from 3 to 4
+- Tree growth rates increased (15-25% coastal, 10-18% on player land) to add economic pressure
+- Tree chopping threshold lowered to 8% (was 15%) so AI manages economy better
+
 ### V1 — Stable (February 22, 2026) — Commit: 2de5290
 Core gameplay complete and tested on Android + Web:
 - Two factions (Army / Insurgents) with 4-tier unit system

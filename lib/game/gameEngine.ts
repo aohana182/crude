@@ -28,7 +28,7 @@ export function createNewGame(
 
   const territories = detectTerritories(hexes);
   for (const t of territories) {
-    t.treasury = Math.max(t.income * 3, 30);
+    t.treasury = Math.max(t.income, 15);
   }
 
   return {
@@ -163,31 +163,40 @@ function tryUnitAction(state: GameState, from: HexCoord, to: HexCoord): GameStat
       (n) => n.q === to.q && n.r === to.r,
     );
 
-    if (toHex.hasTree && !fromHex.unitMoved && isNeighbor) {
+    if (!isNeighbor) return state;
+    if (fromHex.unitMoved) return state;
+
+    if (toHex.hasTree) {
       const newHexes = cloneHexes(state.hexes);
       const newTo = newHexes.get(hexKey(to.q, to.r))!;
       const newFrom = newHexes.get(hexKey(from.q, from.r))!;
       newTo.hasTree = false;
       newTo.wasChopped = true;
-      newFrom.unitMoved = true;
+      newTo.unitTier = fromHex.unitTier;
+      newTo.unitMoved = true;
+      newFrom.unitTier = null;
+      newFrom.unitMoved = false;
 
       const newTerritories = detectTerritories(newHexes);
       syncTreasuryToNewTerritories(state.territories, newTerritories);
 
-      return { ...state, hexes: newHexes, selectedHex: from, territories: newTerritories };
+      return { ...state, hexes: newHexes, selectedHex: { q: to.q, r: to.r }, territories: newTerritories };
     }
 
-    if (toHex.hasGrave && !fromHex.unitMoved && isNeighbor) {
+    if (toHex.hasGrave) {
       const newHexes = cloneHexes(state.hexes);
       const newTo = newHexes.get(hexKey(to.q, to.r))!;
       const newFrom = newHexes.get(hexKey(from.q, from.r))!;
       newTo.hasGrave = false;
-      newFrom.unitMoved = true;
+      newTo.unitTier = fromHex.unitTier;
+      newTo.unitMoved = true;
+      newFrom.unitTier = null;
+      newFrom.unitMoved = false;
 
       const newTerritories = detectTerritories(newHexes);
       syncTreasuryToNewTerritories(state.territories, newTerritories);
 
-      return { ...state, hexes: newHexes, selectedHex: from, territories: newTerritories };
+      return { ...state, hexes: newHexes, selectedHex: { q: to.q, r: to.r }, territories: newTerritories };
     }
 
     if (toHex.unitTier === null && !toHex.hasCastle) {
@@ -195,7 +204,7 @@ function tryUnitAction(state: GameState, from: HexCoord, to: HexCoord): GameStat
       const newTo = newHexes.get(hexKey(to.q, to.r))!;
       const newFrom = newHexes.get(hexKey(from.q, from.r))!;
       newTo.unitTier = fromHex.unitTier;
-      newTo.unitMoved = fromHex.unitMoved;
+      newTo.unitMoved = true;
       newTo.hasTree = false;
       newTo.hasGrave = false;
       newFrom.unitTier = null;
@@ -562,7 +571,7 @@ function growTrees(hexes: Map<string, GameHex>): void {
 
     if (!isCoastal || adjacentTreeCount === 0) continue;
 
-    const growChance = 0.12;
+    const growChance = adjacentTreeCount >= 2 ? 0.25 : 0.15;
 
     if (Math.random() < growChance) {
       treesToGrow.push(key);
@@ -601,7 +610,8 @@ function growTreesOnPlayerLand(hexes: Map<string, GameHex>): void {
 
     if (!isCoastal || adjacentTreeCount === 0) continue;
 
-    if (Math.random() < 0.08) {
+    const playerGrowChance = adjacentTreeCount >= 2 ? 0.18 : 0.10;
+    if (Math.random() < playerGrowChance) {
       treesToGrow.push(key);
     }
   }

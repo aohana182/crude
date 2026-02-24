@@ -259,7 +259,7 @@ export function assignStartingPositions(
     }
 
     const unitPlacements = borderHexes.length > 0 ? borderHexes : ownedArr;
-    const startingUnits = Math.min(3, unitPlacements.length);
+    const startingUnits = Math.min(4, unitPlacements.length);
     const shuffledPlacements = unitPlacements.sort(() => Math.random() - 0.5);
 
     for (let i = 0; i < startingUnits; i++) {
