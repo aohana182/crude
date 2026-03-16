@@ -9,45 +9,48 @@ function seededNoise(q: number, r: number, seed: number): number {
 }
 
 export function generateIslandMap(radius: number): Map<string, GameHex> {
+  while (true) {
+    const { hexes, seed } = buildIslandShape(radius);
+    if (hexes.size >= 80) {
+      addTrees(hexes, seed);
+      return hexes;
+    }
+  }
+}
+
+function buildIslandShape(radius: number): { hexes: Map<string, GameHex>; seed: number } {
   const hexes = new Map<string, GameHex>();
-  const allCoords: HexCoord[] = [];
   const seed = Math.floor(Math.random() * 100000);
 
   for (let q = -radius; q <= radius; q++) {
     for (let r = -radius; r <= radius; r++) {
-      if (Math.abs(q + r) <= radius) {
-        allCoords.push({ q, r });
+      if (Math.abs(q + r) > radius) continue;
+
+      const dist = Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r));
+      const normalizedDist = dist / radius;
+
+      const n1 = seededNoise(q, r, seed) * 0.5;
+      const n2 = seededNoise(q * 3 + 7, r * 3 + 13, seed + 999) * 0.3;
+      const n3 = seededNoise(q * 7 + 31, r * 7 + 41, seed + 5555) * 0.2;
+      const totalNoise = n1 + n2 + n3;
+
+      const edgeFactor = Math.pow(normalizedDist, 1.5);
+      const keepChance = 1.0 - edgeFactor + totalNoise * 0.6;
+
+      if (dist <= 3 || (keepChance > 0.45 && normalizedDist < 0.95)) {
+        hexes.set(hexKey(q, r), {
+          q,
+          r,
+          owner: null,
+          unitTier: null,
+          unitMoved: false,
+          hasNomad: false,
+          hasCapital: false,
+          hasCastle: false,
+          hasGrave: false,
+          wasRelocated: false,
+        });
       }
-    }
-  }
-
-  for (const coord of allCoords) {
-    const dist = Math.max(Math.abs(coord.q), Math.abs(coord.r), Math.abs(coord.q + coord.r));
-    const normalizedDist = dist / radius;
-
-    const n1 = seededNoise(coord.q, coord.r, seed) * 0.5;
-    const n2 = seededNoise(coord.q * 3 + 7, coord.r * 3 + 13, seed + 999) * 0.3;
-    const n3 = seededNoise(coord.q * 7 + 31, coord.r * 7 + 41, seed + 5555) * 0.2;
-    const totalNoise = n1 + n2 + n3;
-
-    const edgeFactor = Math.pow(normalizedDist, 1.5);
-    const keepChance = 1.0 - edgeFactor + totalNoise * 0.6;
-
-    const isLand = dist <= 3 || (keepChance > 0.45 && normalizedDist < 0.95);
-
-    if (isLand) {
-      hexes.set(hexKey(coord.q, coord.r), {
-        q: coord.q,
-        r: coord.r,
-        owner: null,
-        unitTier: null,
-        unitMoved: false,
-        hasTree: false,
-        hasCapital: false,
-        hasCastle: false,
-        hasGrave: false,
-        wasChopped: false,
-      });
     }
   }
 
@@ -55,24 +58,12 @@ export function generateIslandMap(radius: number): Map<string, GameHex> {
   carveWaterPockets(hexes, radius, seed);
   carvePeninsulas(hexes, radius, seed);
 
-  if (hexes.size < 80) {
-    return generateIslandMap(radius);
-  }
-
-  addTrees(hexes, seed);
-
-  return hexes;
+  return { hexes, seed };
 }
 
 function addTrees(hexes: Map<string, GameHex>, seed: number): void {
-  const keys = Array.from(hexes.keys());
-
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
-    const hex = hexes.get(key)!;
-    const [q, r] = key.split(',').map(Number);
-
-    const neighbors = getNeighbors(q, r);
+  for (const hex of hexes.values()) {
+    const neighbors = getNeighbors(hex.q, hex.r);
     let landNeighborCount = 0;
     for (const n of neighbors) {
       if (hexes.has(hexKey(n.q, n.r))) landNeighborCount++;
@@ -80,10 +71,10 @@ function addTrees(hexes: Map<string, GameHex>, seed: number): void {
 
     const isCoastal = landNeighborCount < 6;
 
-    if (isCoastal && seededNoise(q * 11, r * 17, seed + 4444) > 0.75) {
-      hex.hasTree = true;
-    } else if (!isCoastal && seededNoise(q * 23, r * 29, seed + 6666) > 0.92) {
-      hex.hasTree = true;
+    if (isCoastal && seededNoise(hex.q * 11, hex.r * 17, seed + 4444) > 0.75) {
+      hex.hasNomad = true;
+    } else if (!isCoastal && seededNoise(hex.q * 23, hex.r * 29, seed + 6666) > 0.92) {
+      hex.hasNomad = true;
     }
   }
 }
@@ -172,7 +163,7 @@ export function assignStartingPositions(
 ): void {
   const allHexes = Array.from(hexes.values());
   const totalHexes = allHexes.length;
-  const hexesPerPlayer = Math.floor(totalHexes * 0.15);
+  const hexesPerPlayer = Math.floor(totalHexes * 0.20);
 
   const outerHexes = allHexes
     .map((h) => {
@@ -219,7 +210,11 @@ export function assignStartingPositions(
       const [cq, cr] = current.split(',').map(Number);
       const neighbors = getNeighbors(cq, cr);
 
-      const shuffled = neighbors.sort(() => Math.random() - 0.5);
+      const shuffled = neighbors.slice();
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
       for (const n of shuffled) {
         const nk = hexKey(n.q, n.r);
         const hex = hexes.get(nk);
@@ -235,7 +230,7 @@ export function assignStartingPositions(
       const hex = hexes.get(k);
       if (hex) {
         hex.owner = p;
-        hex.hasTree = false;
+        hex.hasNomad = false;
       }
     }
 
@@ -260,7 +255,11 @@ export function assignStartingPositions(
 
     const unitPlacements = borderHexes.length > 0 ? borderHexes : ownedArr;
     const startingUnits = Math.min(4, unitPlacements.length);
-    const shuffledPlacements = unitPlacements.sort(() => Math.random() - 0.5);
+    const shuffledPlacements = unitPlacements.slice();
+    for (let i = shuffledPlacements.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffledPlacements[i], shuffledPlacements[j]] = [shuffledPlacements[j], shuffledPlacements[i]];
+    }
 
     for (let i = 0; i < startingUnits; i++) {
       const hex = hexes.get(shuffledPlacements[i]);

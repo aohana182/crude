@@ -5,15 +5,15 @@ export const CASTLE_COST = 15;
 export const CASTLE_DEFENSE = 2;
 
 export const UNIT_UPKEEP = [2, 6, 18, 54];
-export const UNIT_STRENGTH = [1, 2, 3, 4];
+export const UNIT_STRENGTH = [1, 2, 3, 4]; // classic Slay: Peasant=1, Spearman=2, Knight=3, Baron=4
 
 export const MIN_TERRITORY_SIZE = 2;
 
 export const FACTIONS: Record<string, FactionInfo> = {
-  army: {
-    id: 'army',
-    name: 'Army',
-    unitNames: ['Private', 'Sergeant', 'Major', 'General'],
+  coalition: {
+    id: 'coalition',
+    name: 'Coalition',
+    unitNames: ['Ranger', 'Sergeant', 'Commander', 'General'],
     colors: {
       primary: '#1B3A5C',
       secondary: '#4A90D9',
@@ -63,3 +63,13 @@ export const TERRITORY_COLORS = [
 
 export const HEX_SIZE = 18;
 export const HEX_GAP = 1;
+
+/**
+ * Classic Slay combination rule: two units of the same tier combine into
+ * the next tier. Different tiers cannot combine. Returns -1 if invalid.
+ */
+export function getTierForCombinedStrength(tierA: number, tierB: number): number {
+  if (tierA !== tierB) return -1;
+  if (tierA >= 3) return -1; // Baron + Baron: no tier 4
+  return tierA + 1;
+}

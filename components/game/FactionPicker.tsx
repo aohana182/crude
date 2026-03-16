@@ -18,14 +18,14 @@ export default function FactionPicker({ onSelect }: FactionPickerProps) {
           styles.usCard,
           pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
         ]}
-        onPress={() => onSelect('army')}
+        onPress={() => onSelect('coalition')}
       >
         <View style={styles.iconContainer}>
           <MaterialCommunityIcons name="shield-star" size={48} color="#4A90D9" />
         </View>
-        <Text style={[styles.factionName, { color: '#4A90D9' }]}>ARMY</Text>
+        <Text style={[styles.factionName, { color: '#4A90D9' }]}>COALITION</Text>
         <View style={styles.unitList}>
-          {FACTIONS.army.unitNames.map((name, i) => (
+          {FACTIONS.coalition.unitNames.map((name, i) => (
             <View key={i} style={styles.unitRow}>
               <Text style={styles.tierBadge}>T{i + 1}</Text>
               <Text style={styles.unitName} numberOfLines={1}>{name}</Text>

@@ -1,13 +1,13 @@
 import React, { useMemo, useCallback, useState, useRef } from 'react';
 import { View, StyleSheet, useWindowDimensions, Pressable, Platform } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated from 'react-native-reanimated';
+import { View as Animated } from 'react-native';
 import Svg from 'react-native-svg';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GameState, hexKey, Faction } from '@/lib/game/types';
-import { hexToPixel, pixelToHex, getNeighbors } from '@/lib/game/hexUtils';
-import { HEX_SIZE, UNIT_STRENGTH } from '@/lib/game/constants';
-import { getHexDefenseStrength, isInSameTerritory } from '@/lib/game/territoryManager';
+import { pixelToHex, getNeighbors } from '@/lib/game/hexUtils';
+import { HEX_SIZE, UNIT_STRENGTH, getTierForCombinedStrength, PEASANT_COST, CASTLE_COST } from '@/lib/game/constants';
+import { getHexDefenseStrength, buildHexTerritoryMap } from '@/lib/game/territoryManager';
 import HexTile from './HexTile';
 import Colors from '@/constants/colors';
 
@@ -35,20 +35,10 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
   const vpAspect = svgWidth / svgHeight;
 
   const baseViewBox = useMemo(() => {
-    const allHexes = Array.from(gameState.hexes.values());
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-
-    for (const hex of allHexes) {
-      const { x, y } = hexToPixel(hex.q, hex.r, HEX_SIZE);
-      minX = Math.min(minX, x - HEX_SIZE);
-      maxX = Math.max(maxX, x + HEX_SIZE);
-      minY = Math.min(minY, y - HEX_SIZE);
-      maxY = Math.max(maxY, y + HEX_SIZE);
-    }
-
+    const { minX, maxX, minY, maxY } = gameState.mapBounds;
     const padding = HEX_SIZE * 1.5;
-    const rawW = maxX - minX + padding * 2;
-    const rawH = maxY - minY + padding * 2;
+    const rawW = (maxX - minX) + HEX_SIZE * 2 + padding * 2;
+    const rawH = (maxY - minY) + HEX_SIZE * 2 + padding * 2;
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
 
@@ -61,7 +51,7 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
     }
 
     return { x: cx - w / 2, y: cy - h / 2, w, h };
-  }, [gameState.hexes, vpAspect]);
+  }, [gameState.mapBounds, vpAspect]);
 
   const hexArray = useMemo(() => Array.from(gameState.hexes.values()), [gameState.hexes]);
   const factions = useMemo(() => gameState.players.map(p => p.faction) as Faction[], [gameState.players]);
@@ -127,7 +117,6 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
         const svgCoord = viewportToSvgRef.current(e.x, e.y);
         const hex = pixelToHex(svgCoord.x, svgCoord.y);
         const key = hexKey(hex.q, hex.r);
-        console.log(`[HEX TAP] local=(${e.x.toFixed(1)},${e.y.toFixed(1)}) svg=(${svgCoord.x.toFixed(1)},${svgCoord.y.toFixed(1)}) hex=(${hex.q},${hex.r}) exists=${hexesRef.current.has(key)}`);
         if (hexesRef.current.has(key)) {
           onHexPressRef.current(hex.q, hex.r);
         }
@@ -222,70 +211,74 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
     ? hexKey(gameState.selectedHex.q, gameState.selectedHex.r)
     : null;
 
+  const hexTerritoryMap = useMemo(
+    () => buildHexTerritoryMap(gameState.territories),
+    [gameState.territories],
+  );
+
   const validTargetKeys = useMemo(() => {
     const targets = new Map<string, 'move' | 'merge' | 'attack'>();
     if (!gameState.selectedHex) return targets;
 
-    const selHex = gameState.hexes.get(hexKey(gameState.selectedHex.q, gameState.selectedHex.r));
+    const selKey2 = hexKey(gameState.selectedHex.q, gameState.selectedHex.r);
+    const selHex = gameState.hexes.get(selKey2);
     if (!selHex || selHex.unitTier === null || selHex.owner !== gameState.currentPlayer) return targets;
+    if (selHex.unitMoved) return targets;
 
+    const selTerritoryId = hexTerritoryMap.get(selKey2);
     const unitStrength = UNIT_STRENGTH[selHex.unitTier];
-    const canAct = !selHex.unitMoved;
 
-    if (!canAct) return targets;
+    // Free jump: any hex in the same connected territory is a valid move/merge target
+    for (const [key, hex] of gameState.hexes) {
+      if (key === selKey2) continue;
+      if (hex.owner !== gameState.currentPlayer) continue;
+      if (hexTerritoryMap.get(key) !== selTerritoryId) continue;
 
-    const neighbors = getNeighbors(gameState.selectedHex.q, gameState.selectedHex.r);
+      if (hex.unitTier !== null && gameState.combineMode) {
+        const newTier = getTierForCombinedStrength(selHex.unitTier, hex.unitTier);
+        if (newTier !== -1 && newTier <= 3) targets.set(key, 'merge');
+      } else if (hex.unitTier === null && !hex.hasCastle) {
+        targets.set(key, 'move');
+      }
+    }
 
-    for (const n of neighbors) {
+    // Attacks and neutral captures: adjacent neighbors only
+    for (const n of getNeighbors(gameState.selectedHex.q, gameState.selectedHex.r)) {
       const key = hexKey(n.q, n.r);
       const hex = gameState.hexes.get(key);
-      if (!hex || key === selectedKey) continue;
+      if (!hex || hex.owner === gameState.currentPlayer) continue;
 
-      if (hex.owner === gameState.currentPlayer) {
-        const sameTerritory = isInSameTerritory(
-          gameState.selectedHex.q, gameState.selectedHex.r,
-          hex.q, hex.r, gameState.territories,
-        );
-        if (!sameTerritory) continue;
-
-        if (hex.unitTier !== null && gameState.combineMode) {
-          const combinedStrength = UNIT_STRENGTH[selHex.unitTier] + UNIT_STRENGTH[hex.unitTier];
-          let newTier = -1;
-          for (let i = 0; i < UNIT_STRENGTH.length; i++) {
-            if (UNIT_STRENGTH[i] === combinedStrength) {
-              newTier = i;
-              break;
-            }
-          }
-          if (newTier !== -1 && newTier <= 3) {
-            targets.set(key, 'merge');
-          }
-        } else if (hex.unitTier === null && !hex.hasCastle) {
-          targets.set(key, 'move');
-        }
-      } else if (hex.owner === null) {
+      if (hex.owner === null) {
         targets.set(key, 'attack');
       } else {
-        const defense = getHexDefenseStrength(hex.q, hex.r, gameState.hexes);
-        if (unitStrength > defense) {
-          targets.set(key, 'attack');
-        }
+        const defense = getHexDefenseStrength(hex.q, hex.r, gameState.hexes, hexTerritoryMap);
+        // strict < so equal strength resolves to attacker win (classic Slay)
+        if (unitStrength >= defense) targets.set(key, 'attack');
       }
     }
 
     return targets;
-  }, [gameState.selectedHex, gameState.hexes, gameState.currentPlayer, gameState.territories, selectedKey, gameState.combineMode]);
+  }, [gameState.selectedHex, gameState.hexes, gameState.currentPlayer, hexTerritoryMap, gameState.combineMode]);
 
   const purchaseTargetKeys = useMemo(() => {
     if (gameState.purchaseType === null) return new Set<string>();
+    const cost = gameState.purchaseType === 'peasant' ? PEASANT_COST : CASTLE_COST;
+    // Only highlight hexes in territories that can actually afford the purchase.
+    // Without this filter, tapping a hex in a broke territory silently cancels.
+    const affordableHexKeys = new Set<string>(
+      gameState.territories
+        .filter(t => t.owner === gameState.currentPlayer && t.treasury >= cost)
+        .flatMap(t => t.hexes.map(h => hexKey(h.q, h.r)))
+    );
     const targets = new Set<string>();
     for (const hex of gameState.hexes.values()) {
       if (hex.owner === gameState.currentPlayer && hex.unitTier === null && !hex.hasCapital && !hex.hasCastle) {
-        targets.add(hexKey(hex.q, hex.r));
+        const k = hexKey(hex.q, hex.r);
+        if (affordableHexKeys.has(k)) targets.add(k);
       }
     }
     return targets;
-  }, [gameState.purchaseType, gameState.hexes, gameState.currentPlayer]);
+  }, [gameState.purchaseType, gameState.hexes, gameState.currentPlayer, gameState.territories]);
 
   const webWheelProps: any = IS_WEB ? { onWheel: handleWebWheel } : {};
 

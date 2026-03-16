@@ -7,14 +7,15 @@ import { getTerritoryForHex } from '@/lib/game/territoryManager';
 import Colors from '@/constants/colors';
 
 const PEASANT_SPRITES: Record<string, any> = {
-  army: require('@/assets/sprites/army_1.png'),
-  insurgents: require('@/assets/sprites/insurgent_1.png'),
+  coalition: require('@/assets/sprites/coalition_1.png'),
+  insurgents: require('@/assets/sprites/insurgent_1_new.png'),
 };
 
 const CASTLE_SPRITES: Record<string, any> = {
-  army: require('@/assets/sprites/tower_army.png'),
+  coalition: require('@/assets/sprites/tower_army.png'),
   insurgents: require('@/assets/sprites/tower_insurgent.png'),
 };
+
 
 interface ActionPanelProps {
   gameState: GameState;
@@ -79,6 +80,13 @@ export default function ActionPanel({ gameState, onBuyUnit, onCombine, onDeselec
   const isCombineActive = gameState.combineMode;
   const hasSelection = gameState.selectedHex !== null;
   const hasAnyMode = isPeasantActive || isCastleActive || isCombineActive || hasSelection;
+
+  const hasUnmovedUnits = useMemo(() =>
+    Array.from(gameState.hexes.values()).some(
+      h => h.owner === gameState.currentPlayer && h.unitTier !== null && !h.unitMoved
+    ),
+    [gameState.hexes, gameState.currentPlayer]
+  );
 
   const selectedHex = gameState.selectedHex
     ? gameState.hexes.get(hexKey(gameState.selectedHex.q, gameState.selectedHex.r))
@@ -255,6 +263,9 @@ export default function ActionPanel({ gameState, onBuyUnit, onCombine, onDeselec
         >
           <MaterialCommunityIcons name="arrow-right-bold" size={22} color="#fff" />
           <Text style={styles.endTurnText}>END</Text>
+          {hasUnmovedUnits && (
+            <View style={styles.unmovedDot} />
+          )}
         </Pressable>
       </View>
 
@@ -367,6 +378,18 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: Colors.accent.oil,
     gap: 2,
+    position: 'relative' as const,
+  },
+  unmovedDot: {
+    position: 'absolute' as const,
+    top: 4,
+    right: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#FF6B35',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.3)',
   },
   endTurnText: {
     color: '#fff',

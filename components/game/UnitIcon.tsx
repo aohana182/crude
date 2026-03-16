@@ -25,7 +25,7 @@ const INSURGENTS_ICONS: { name: string; set: 'mci' | 'fa5' | 'ion' }[] = [
 ];
 
 export default function UnitIcon({ tier, faction, size = 16, color = '#fff' }: UnitIconProps) {
-  const icons = faction === 'army' ? US_ICONS : INSURGENTS_ICONS;
+  const icons = faction === 'coalition' ? US_ICONS : INSURGENTS_ICONS;
   const icon = icons[tier] || icons[0];
 
   if (icon.set === 'mci') {

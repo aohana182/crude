@@ -1,4 +1,4 @@
-# Hex Command
+# Crude
 
 ## Version History
 
@@ -28,7 +28,7 @@ Core gameplay complete and tested on Android + Web:
 
 ## Overview
 
-Hex Command is a turn-based strategy game built as a cross-platform mobile/web application using Expo (React Native). Players choose between two factions (Army or Insurgents) and compete on a procedurally generated hexagonal island map. The game features territory control, unit purchasing with tiered units, treasury/economy management, and AI opponents. The app has an Express backend server, though the core game logic runs client-side.
+Crude is a turn-based strategy game built as a cross-platform mobile/web application using Expo (React Native). Players choose between two factions (Army or Insurgents) and compete on a procedurally generated hexagonal island map. The game features territory control, unit purchasing with tiered units, treasury/economy management, and AI opponents. The app has an Express backend server, though the core game logic runs client-side.
 
 ## User Preferences
 

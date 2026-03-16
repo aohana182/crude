@@ -1,22 +1,24 @@
 import { GameHex, GameState, hexKey, HexCoord, Territory } from './types';
 import { getNeighbors, findConnectedRegion } from './hexUtils';
-import { PEASANT_COST, CASTLE_COST, UNIT_UPKEEP, UNIT_STRENGTH, CASTLE_DEFENSE } from './constants';
+import { PEASANT_COST, CASTLE_COST, UNIT_UPKEEP, UNIT_STRENGTH, CASTLE_DEFENSE, getTierForCombinedStrength } from './constants';
 import {
   getTerritoryForHex,
   getHexDefenseStrength,
   detectTerritories,
+  mergeTerritoryTreasuries,
+  buildHexTerritoryMap,
 } from './territoryManager';
 
 export function executeAITurn(state: GameState): GameState {
   let newState = { ...state };
   const playerId = newState.currentPlayer;
 
-  newState = aiExpandToNeutral(newState, playerId);
   newState = aiAttackEnemy(newState, playerId);
+  newState = aiExpandToNeutral(newState, playerId);
   newState = aiMoveUnitsToFront(newState, playerId);
 
   let midTerritories = detectTerritories(newState.hexes);
-  mergeTreasuries(newState.territories, midTerritories);
+  mergeTerritoryTreasuries(newState.territories, midTerritories);
   newState.territories = midTerritories;
 
   newState = aiChopTrees(newState, playerId);
@@ -27,7 +29,7 @@ export function executeAITurn(state: GameState): GameState {
   newState = aiSecondPassAttack(newState, playerId);
 
   const newTerritories = detectTerritories(newState.hexes);
-  mergeTreasuries(newState.territories, newTerritories);
+  mergeTerritoryTreasuries(newState.territories, newTerritories);
   newState.territories = newTerritories;
 
   return newState;
@@ -41,6 +43,7 @@ function aiAttackEnemy(state: GameState, playerId: number): GameState {
     changed = false;
     iterations++;
 
+    const hexTerritoryMap = buildHexTerritoryMap(state.territories);
     let bestAttack: { from: string; to: string; score: number } | null = null;
 
     for (const [key, hex] of state.hexes) {
@@ -52,15 +55,16 @@ function aiAttackEnemy(state: GameState, playerId: number): GameState {
         if (!nh) continue;
         if (nh.owner === null || nh.owner === playerId) continue;
 
-        const defense = getHexDefenseStrength(n.q, n.r, state.hexes);
-        if (UNIT_STRENGTH[hex.unitTier] <= defense) continue;
+        const defense = getHexDefenseStrength(n.q, n.r, state.hexes, hexTerritoryMap);
+        // strict < so equal strength resolves to attacker win (classic Slay)
+        if (UNIT_STRENGTH[hex.unitTier] < defense) continue;
 
         let score = 10;
         if (nh.hasCapital) score += 20;
         if (nh.hasCastle) score += 15;
         if (nh.unitTier !== null) score += 5 + nh.unitTier * 3;
 
-        const wouldSplitTerritory = checkTerritotySplit(n.q, n.r, nh.owner, state.hexes);
+        const wouldSplitTerritory = checkTerritorySplit(n.q, n.r, nh.owner, state.hexes);
         if (wouldSplitTerritory) score += 12;
 
         const excessStrength = UNIT_STRENGTH[hex.unitTier] - defense;
@@ -85,7 +89,7 @@ function aiAttackEnemy(state: GameState, playerId: number): GameState {
       toHex.owner = playerId;
       toHex.unitTier = fromHex.unitTier;
       toHex.unitMoved = true;
-      toHex.hasTree = false;
+      toHex.hasNomad = false;
       toHex.hasGrave = false;
       toHex.hasCapital = false;
       toHex.hasCastle = false;
@@ -98,7 +102,7 @@ function aiAttackEnemy(state: GameState, playerId: number): GameState {
   return state;
 }
 
-function checkTerritotySplit(q: number, r: number, owner: number, hexes: Map<string, GameHex>): boolean {
+function checkTerritorySplit(q: number, r: number, owner: number, hexes: Map<string, GameHex>): boolean {
   const neighbors = getNeighbors(q, r);
   const ownerNeighbors = neighbors.filter(n => {
     const nh = hexes.get(hexKey(n.q, n.r));
@@ -136,6 +140,8 @@ function checkTerritotySplit(q: number, r: number, owner: number, hexes: Map<str
 }
 
 function aiSecondPassAttack(state: GameState, playerId: number): GameState {
+  const hexTerritoryMap = buildHexTerritoryMap(state.territories);
+
   for (const [key, hex] of state.hexes) {
     if (hex.owner !== playerId || hex.unitTier === null || hex.unitMoved) continue;
 
@@ -153,8 +159,8 @@ function aiSecondPassAttack(state: GameState, playerId: number): GameState {
           bestScore = 5;
         }
       } else if (nh.owner !== playerId) {
-        const defense = getHexDefenseStrength(n.q, n.r, state.hexes);
-        if (UNIT_STRENGTH[hex.unitTier] > defense) {
+        const defense = getHexDefenseStrength(n.q, n.r, state.hexes, hexTerritoryMap);
+        if (UNIT_STRENGTH[hex.unitTier] >= defense) { // equal strength: attacker wins
           let score = 10;
           if (nh.hasCapital) score += 20;
           if (nh.hasCastle) score += 15;
@@ -171,7 +177,7 @@ function aiSecondPassAttack(state: GameState, playerId: number): GameState {
       toHex.owner = playerId;
       toHex.unitTier = hex.unitTier;
       toHex.unitMoved = true;
-      toHex.hasTree = false;
+      toHex.hasNomad = false;
       toHex.hasGrave = false;
       toHex.hasCapital = false;
       toHex.hasCastle = false;
@@ -233,7 +239,7 @@ function aiMoveUnitsToFront(state: GameState, playerId: number): GameState {
         if (bestDist < currentDist) {
           const toHex = state.hexes.get(hexKey(bestMove.q, bestMove.r))!;
           toHex.unitTier = hex.unitTier;
-          toHex.unitMoved = true;
+          toHex.unitMoved = false; // free movement within territory; unit can still act
           hex.unitTier = null;
           hex.unitMoved = false;
           movedKeys.add(hexKey(bestMove.q, bestMove.r));
@@ -272,7 +278,9 @@ function getDistanceToFront(q: number, r: number, playerId: number, hexes: Map<s
 function aiExpandToNeutral(state: GameState, playerId: number): GameState {
   let expanded = true;
   let totalExpanded = 0;
-  const maxExpansions = 12;
+  // Allow more expansions per turn when neutrals are scarce (end-game mop-up)
+  const neutralCount = Array.from(state.hexes.values()).filter(h => h.owner === null).length;
+  const maxExpansions = neutralCount <= 20 ? 30 : 16;
 
   while (expanded && totalExpanded < maxExpansions) {
     expanded = false;
@@ -291,7 +299,7 @@ function aiExpandToNeutral(state: GameState, playerId: number): GameState {
         if (!nh || nh.owner !== null) continue;
 
         let score = 1;
-        if (!nh.hasTree) score += 2;
+        if (!nh.hasNomad) score += 2;
 
         const nNeighbors = getNeighbors(n.q, n.r);
         for (const nn of nNeighbors) {
@@ -315,7 +323,7 @@ function aiExpandToNeutral(state: GameState, playerId: number): GameState {
         nh.owner = playerId;
         nh.unitTier = hex.unitTier;
         nh.unitMoved = true;
-        nh.hasTree = false;
+        nh.hasNomad = false;
         nh.hasGrave = false;
         hex.unitTier = null;
         hex.unitMoved = false;
@@ -334,7 +342,7 @@ function aiChopTrees(state: GameState, playerId: number): GameState {
   for (const territory of territories) {
     const treeCount = territory.hexes.filter(c => {
       const h = state.hexes.get(hexKey(c.q, c.r));
-      return h && h.hasTree;
+      return h && h.hasNomad;
     }).length;
     const treeRatio = treeCount / territory.hexes.length;
 
@@ -349,17 +357,15 @@ function aiChopTrees(state: GameState, playerId: number): GameState {
       for (const n of neighbors) {
         const nk = hexKey(n.q, n.r);
         const nh = state.hexes.get(nk);
-        if (!nh || nh.owner !== playerId || !nh.hasTree) continue;
+        if (!nh || nh.owner !== playerId || !nh.hasNomad) continue;
 
         const sameTerritory = territory.hexes.some(h => hexKey(h.q, h.r) === nk);
         if (!sameTerritory) continue;
 
-        nh.hasTree = false;
-        nh.wasChopped = true;
-        nh.unitTier = hex.unitTier;
-        nh.unitMoved = true;
-        hex.unitTier = null;
-        hex.unitMoved = false;
+        // Classic Slay: unit stays in place, clears the nomad, loses its turn
+        nh.hasNomad = false;
+        nh.wasRelocated = true;
+        hex.unitMoved = true;
         break;
       }
     }
@@ -383,13 +389,17 @@ function aiBuyPeasants(state: GameState, playerId: number): GameState {
 
     for (const coord of territory.hexes) {
       const hex = state.hexes.get(hexKey(coord.q, coord.r));
-      if (!hex || hex.unitTier !== null || hex.hasCastle || hex.hasCapital || hex.hasTree) continue;
+      if (!hex || hex.unitTier !== null || hex.hasCastle || hex.hasCapital) continue;
 
       const neighbors = getNeighbors(coord.q, coord.r);
       const bordersExpandable = neighbors.some(n => {
         const nh = state.hexes.get(hexKey(n.q, n.r));
         return nh && (nh.owner === null || (nh.owner !== null && nh.owner !== playerId));
       });
+
+      // Allow buying on nomad-covered border hexes (clears nomad on purchase,
+      // same as human player). Skip nomads only for interior hexes.
+      if (hex.hasNomad && !bordersExpandable) continue;
 
       if (bordersExpandable) {
         borderHexes.push(coord);
@@ -414,8 +424,8 @@ function aiBuyPeasants(state: GameState, playerId: number): GameState {
       if (!hex || hex.unitTier !== null || hex.hasCastle || hex.hasCapital) continue;
 
       hex.unitTier = 0;
-      hex.unitMoved = true;
-      hex.hasTree = false;
+      hex.unitMoved = false;
+      hex.hasNomad = false;
       hex.hasGrave = false;
 
       territory.treasury -= PEASANT_COST;
@@ -450,7 +460,7 @@ function aiBuyCastles(state: GameState, playerId: number): GameState {
 
     for (const coord of territory.hexes) {
       const hex = state.hexes.get(hexKey(coord.q, coord.r));
-      if (!hex || hex.unitTier !== null || hex.hasCastle || hex.hasCapital || hex.hasTree) continue;
+      if (!hex || hex.unitTier !== null || hex.hasCastle || hex.hasCapital || hex.hasNomad) continue;
 
       const neighbors = getNeighbors(coord.q, coord.r);
       let score = 0;
@@ -483,7 +493,7 @@ function aiBuyCastles(state: GameState, playerId: number): GameState {
     if (bestHex && bestScore > 0 && territory.treasury >= CASTLE_COST) {
       const hex = state.hexes.get(hexKey(bestHex.q, bestHex.r))!;
       hex.hasCastle = true;
-      hex.hasTree = false;
+      hex.hasNomad = false;
       hex.hasGrave = false;
       territory.treasury -= CASTLE_COST;
     }
@@ -522,12 +532,13 @@ function aiCombineUnits(state: GameState, playerId: number): GameState {
           const defense = getHexDefenseStrength(n.q, n.r, state.hexes);
           const bestStrength = units.reduce((max, u) =>
             Math.max(max, u.hex.unitTier !== null ? UNIT_STRENGTH[u.hex.unitTier] : 0), 0);
-          return defense >= bestStrength;
+          return defense > bestStrength; // attacker wins on equal, only combine if genuinely blocked
         });
       });
 
       const tier0Count = units.filter(u => u.hex.unitTier === 0).length;
-      const shouldCombine = needsStrongerUnit || tier0Count >= 4;
+      const tier1Count = units.filter(u => u.hex.unitTier === 1).length;
+      const shouldCombine = needsStrongerUnit || tier0Count >= 3 || tier1Count >= 3;
 
       if (!shouldCombine) continue;
 
@@ -541,14 +552,7 @@ function aiCombineUnits(state: GameState, playerId: number): GameState {
           const unitB = units[j];
           if (unitB.hex.unitTier === null) continue;
 
-          const combinedStrength = UNIT_STRENGTH[unitA.hex.unitTier] + UNIT_STRENGTH[unitB.hex.unitTier];
-          let newTier = -1;
-          for (let t = 0; t < UNIT_STRENGTH.length; t++) {
-            if (UNIT_STRENGTH[t] === combinedStrength) {
-              newTier = t;
-              break;
-            }
-          }
+          const newTier = getTierForCombinedStrength(unitA.hex.unitTier, unitB.hex.unitTier);
           if (newTier === -1 || newTier > 3) continue;
 
           const newUpkeep = territory.upkeep
@@ -574,30 +578,3 @@ function aiCombineUnits(state: GameState, playerId: number): GameState {
   return state;
 }
 
-function mergeTreasuries(
-  oldTerritories: Territory[],
-  newTerritories: Territory[],
-): void {
-  for (const newT of newTerritories) {
-    const newHexSet = new Set(newT.hexes.map((h: HexCoord) => hexKey(h.q, h.r)));
-
-    let totalTreasury = 0;
-    let matchCount = 0;
-
-    for (const oldT of oldTerritories) {
-      if (oldT.owner !== newT.owner) continue;
-      let overlap = 0;
-      for (const h of oldT.hexes) {
-        if (newHexSet.has(hexKey(h.q, h.r))) overlap++;
-      }
-      if (overlap > 0) {
-        totalTreasury += oldT.treasury;
-        matchCount++;
-      }
-    }
-
-    if (matchCount > 0) {
-      newT.treasury = totalTreasury;
-    }
-  }
-}

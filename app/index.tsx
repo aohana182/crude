@@ -46,9 +46,8 @@ export default function MainMenu() {
 
       <View style={styles.header}>
         <MaterialCommunityIcons name="barrel" size={56} color={Colors.accent.oil} />
-        <Text style={styles.title}>HEX</Text>
-        <Text style={styles.titleAccent}>COMMAND</Text>
-        <Text style={styles.subtitle}>Tactical Hex Warfare</Text>
+        <Text style={styles.title}>CRUDE</Text>
+        <Text style={styles.subtitle}>Desert Territory Warfare</Text>
       </View>
 
       {!showFactionPicker ? (
@@ -117,13 +116,6 @@ const styles = StyleSheet.create({
     letterSpacing: 12,
     lineHeight: 56,
     marginTop: 8,
-  },
-  titleAccent: {
-    fontSize: 28,
-    fontFamily: 'Rajdhani_600SemiBold',
-    color: Colors.accent.oil,
-    letterSpacing: 8,
-    marginTop: -4,
   },
   subtitle: {
     fontSize: 13,

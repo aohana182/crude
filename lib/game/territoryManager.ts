@@ -2,6 +2,33 @@ import { GameHex, Territory, hexKey, coordFromKey, HexCoord } from './types';
 import { findConnectedRegion, getNeighbors } from './hexUtils';
 import { UNIT_UPKEEP, UNIT_STRENGTH, MIN_TERRITORY_SIZE, CASTLE_DEFENSE } from './constants';
 
+/**
+ * Kills units and removes capitals from territories that are too small
+ * to sustain themselves. Must be called explicitly after detectTerritories
+ * at points in the game loop where such enforcement is appropriate.
+ */
+export function enforceMinTerritorySize(
+  hexes: Map<string, GameHex>,
+  territories: Territory[],
+): void {
+  // Build the set of hex keys that belong to a valid (large enough) territory
+  const validHexKeys = new Set<string>();
+  for (const t of territories) {
+    for (const h of t.hexes) validHexKeys.add(hexKey(h.q, h.r));
+  }
+
+  // Kill units on owned hexes that aren't part of any valid territory
+  for (const [key, h] of hexes) {
+    if (h.owner === null || validHexKeys.has(key)) continue;
+    h.hasCapital = false;
+    if (h.unitTier !== null) {
+      h.unitTier = null;
+      h.unitMoved = false;
+      h.hasGrave = true;
+    }
+  }
+}
+
 export function detectTerritories(hexes: Map<string, GameHex>): Territory[] {
   const visited = new Set<string>();
   const territories: Territory[] = [];
@@ -31,23 +58,13 @@ export function detectTerritories(hexes: Map<string, GameHex>): Territory[] {
         if (h.hasCapital) {
           capitalHex = coord;
         }
-        if (!h.hasTree && !h.hasGrave) {
+        if (!h.hasNomad) {
           income += 1;
         }
       }
     }
 
     if (hexCoords.length < MIN_TERRITORY_SIZE) {
-      for (const c of hexCoords) {
-        const h = hexes.get(hexKey(c.q, c.r));
-        if (h) {
-          h.hasCapital = false;
-          if (h.unitTier !== null) {
-            h.unitTier = null;
-            h.unitMoved = false;
-          }
-        }
-      }
       continue;
     }
 
@@ -69,7 +86,7 @@ export function detectTerritories(hexes: Map<string, GameHex>): Territory[] {
       const capHexObj = hexes.get(hexKey(bestHex.q, bestHex.r));
       if (capHexObj) {
         capHexObj.hasCapital = true;
-        capHexObj.hasTree = false;
+        capHexObj.hasNomad = false;
         capHexObj.hasGrave = false;
       }
     }
@@ -104,7 +121,7 @@ export function updateTerritoryEconomy(
         if (hex.unitTier !== null) {
           upkeep += UNIT_UPKEEP[hex.unitTier];
         }
-        if (!hex.hasTree && !hex.hasGrave) {
+        if (!hex.hasNomad) {
           income += 1;
         }
       }
@@ -128,15 +145,24 @@ export function updateTerritoryEconomy(
   });
 }
 
+/**
+ * Returns the effective defense strength of a hex.
+ * Classic Slay rule: units/castles/capitals defend their own hex AND adjacent
+ * hexes within the SAME territory. Pass hexTerritoryMap to enforce the
+ * same-territory constraint; omit it to fall back to owner-only check.
+ */
 export function getHexDefenseStrength(
   q: number,
   r: number,
   hexes: Map<string, GameHex>,
+  hexTerritoryMap?: Map<string, string>,
 ): number {
-  const hex = hexes.get(hexKey(q, r));
+  const targetKey = hexKey(q, r);
+  const hex = hexes.get(targetKey);
   if (!hex || hex.owner === null) return 0;
 
   const owner = hex.owner;
+  const targetTerritoryId = hexTerritoryMap?.get(targetKey);
   let maxDefense = 0;
 
   if (hex.unitTier !== null) {
@@ -151,8 +177,12 @@ export function getHexDefenseStrength(
 
   const neighbors = getNeighbors(q, r);
   for (const n of neighbors) {
-    const nh = hexes.get(hexKey(n.q, n.r));
+    const nk = hexKey(n.q, n.r);
+    const nh = hexes.get(nk);
     if (!nh || nh.owner !== owner) continue;
+
+    // Enforce same-territory constraint (classic Slay rule)
+    if (hexTerritoryMap && targetTerritoryId && hexTerritoryMap.get(nk) !== targetTerritoryId) continue;
 
     if (nh.unitTier !== null) {
       maxDefense = Math.max(maxDefense, UNIT_STRENGTH[nh.unitTier]);
@@ -166,6 +196,17 @@ export function getHexDefenseStrength(
   }
 
   return maxDefense;
+}
+
+/** Pre-computes a hex-key → territory-id map for O(1) same-territory checks. */
+export function buildHexTerritoryMap(territories: Territory[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const t of territories) {
+    for (const h of t.hexes) {
+      map.set(hexKey(h.q, h.r), t.id);
+    }
+  }
+  return map;
 }
 
 export function isInSameTerritory(
@@ -205,51 +246,61 @@ export function getTerritoryForHex(
   return null;
 }
 
-export function getBorderHexes(
-  territory: Territory,
-  hexes: Map<string, GameHex>,
-): HexCoord[] {
-  const borders: HexCoord[] = [];
-  const hexSet = new Set(territory.hexes.map((h) => hexKey(h.q, h.r)));
-
-  for (const coord of territory.hexes) {
-    const neighbors = getNeighbors(coord.q, coord.r);
-    for (const n of neighbors) {
-      const nk = hexKey(n.q, n.r);
-      const nh = hexes.get(nk);
-      if (!nh || (nh.owner !== null && nh.owner !== territory.owner)) {
-        if (!borders.some((b) => b.q === coord.q && b.r === coord.r)) {
-          borders.push(coord);
-        }
-        break;
+/**
+ * Sync treasury values from oldTerritories to newTerritories by summing
+ * contributions from all old territories that overlap with each new one.
+ * Used when territories merge (conquest) or are re-detected after mutations.
+ */
+export function mergeTerritoryTreasuries(
+  oldTerritories: Territory[],
+  newTerritories: Territory[],
+): void {
+  for (const newT of newTerritories) {
+    const newHexSet = new Set(newT.hexes.map((h: HexCoord) => hexKey(h.q, h.r)));
+    let total = 0;
+    let matched = 0;
+    for (const oldT of oldTerritories) {
+      if (oldT.owner !== newT.owner) continue;
+      const overlaps = oldT.hexes.some(h => newHexSet.has(hexKey(h.q, h.r)));
+      if (overlaps) {
+        total += oldT.treasury;
+        matched++;
       }
     }
+    if (matched > 0) newT.treasury = total;
   }
-
-  return borders;
 }
 
-export function getAttackableHexes(
-  territory: Territory,
-  hexes: Map<string, GameHex>,
-): { from: HexCoord; to: HexCoord; defenseStrength: number }[] {
-  const attackable: { from: HexCoord; to: HexCoord; defenseStrength: number }[] = [];
+/**
+ * Sync treasury when territories are re-detected without ownership changes
+ * (e.g. unit moved, nomad cleared, territory split).
+ *
+ * Classic Slay rule on split: the largest fragment keeps the full treasury;
+ * all smaller fragments start with 0.
+ */
+export function syncTerritoryTreasuries(
+  oldTerritories: Territory[],
+  newTerritories: Territory[],
+): void {
+  for (const oldT of oldTerritories) {
+    const oldHexSet = new Set(oldT.hexes.map((h: HexCoord) => hexKey(h.q, h.r)));
 
-  for (const coord of territory.hexes) {
-    const neighbors = getNeighbors(coord.q, coord.r);
-    for (const n of neighbors) {
-      const nk = hexKey(n.q, n.r);
-      const nh = hexes.get(nk);
-      if (nh && ((nh.owner !== null && nh.owner !== territory.owner) || nh.owner === null)) {
-        const defense = nh.owner !== null ? getHexDefenseStrength(n.q, n.r, hexes) : 0;
-        attackable.push({
-          from: coord,
-          to: { q: n.q, r: n.r },
-          defenseStrength: defense,
-        });
-      }
+    // Find all new fragments of same owner that overlap with this old territory
+    const overlapping = newTerritories
+      .filter(newT =>
+        newT.owner === oldT.owner &&
+        newT.hexes.some(h => oldHexSet.has(hexKey(h.q, h.r)))
+      )
+      .sort((a, b) => b.hexes.length - a.hexes.length); // largest first
+
+    if (overlapping.length === 0) continue;
+
+    // Largest fragment keeps the full treasury
+    overlapping[0].treasury = oldT.treasury;
+    // All smaller fragments start with 0
+    for (let i = 1; i < overlapping.length; i++) {
+      overlapping[i].treasury = 0;
     }
   }
-
-  return attackable;
 }
+

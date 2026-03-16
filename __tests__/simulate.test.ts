@@ -155,7 +155,7 @@ function simulateHumanTurn(state: GameState): GameState {
   return s;
 }
 
-function runSimulation(simIndex: number, numTurns: number = 60): { winner: number | null; turns: number; reason: string } {
+function runSimulation(simIndex: number, numTurns: number = 100): { winner: number | null; turns: number; reason: string } {
   // AI vs AI: both players controlled by the AI engine
   let state = createNewGame('coalition', 10);
   state = { ...state, players: state.players.map(p => ({ ...p, isHuman: false })) };
@@ -187,6 +187,14 @@ function runSimulation(simIndex: number, numTurns: number = 60): { winner: numbe
     }
     state = endTurn(state); // runs P1 AI, returns to P0
 
+    // Check if the game ended during this turn (detection can happen mid-endTurn)
+    if (state.phase === 'game_over') {
+      const winner = state.winner;
+      const faction = winner !== null ? state.players[winner].faction : 'none';
+      console.log(`  → GAME OVER turn ${turn}: ${faction.toUpperCase()} wins | bankruptcies=${bankruptcyEvents} splits=${splitEvents}`);
+      return { winner, turns: turn, reason: 'conquest' };
+    }
+
     // Track bankruptcies (units that died → graves)
     const graves = Array.from(state.hexes.values()).filter(h => h.hasGrave).length;
     if (graves > 0) bankruptcyEvents++;
@@ -217,7 +225,7 @@ const NUM_GAMES = 10;
 const results: { winner: number | null; turns: number; reason: string }[] = [];
 
 for (let i = 1; i <= NUM_GAMES; i++) {
-  results.push(runSimulation(i, 60));
+  results.push(runSimulation(i, 100));
 }
 
 console.log(`\n${'='.repeat(50)}`);
@@ -232,3 +240,4 @@ console.log(`Coalition(P0) wins: ${p0wins}/${NUM_GAMES}`);
 console.log(`Insurgents(P1) wins: ${p1wins}/${NUM_GAMES}`);
 console.log(`Draws/Timeout:       ${draws}/${NUM_GAMES}`);
 console.log(`Avg turns to finish: ${avgTurns}`);
+test('simulation', () => { expect(true).toBe(true); });

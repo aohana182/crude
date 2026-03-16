@@ -3,6 +3,12 @@ import { View, StyleSheet, Platform } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Faction, GameState, PurchaseType } from '@/lib/game/types';
+import { FACTIONS } from '@/lib/game/constants';
+
+function toValidFaction(value: string | undefined): Faction {
+  if (value && value in FACTIONS) return value as Faction;
+  return 'coalition';
+}
 import { createNewGame, handleHexTap, startPurchase, endTurn, toggleCombineMode } from '@/lib/game/gameEngine';
 import HexGrid from '@/components/game/HexGrid';
 import StatusBar from '@/components/game/StatusBar';
@@ -18,8 +24,9 @@ export default function GameScreen() {
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
 
+  const validFaction = toValidFaction(faction);
   const [gameState, setGameState] = useState<GameState>(() =>
-    createNewGame((faction as Faction) || 'army', MAP_RADIUS),
+    createNewGame(validFaction, MAP_RADIUS),
   );
 
   const onHexPress = useCallback(
@@ -53,8 +60,8 @@ export default function GameScreen() {
   }, []);
 
   const onNewGame = useCallback(() => {
-    setGameState(createNewGame((faction as Faction) || 'army', MAP_RADIUS));
-  }, [faction]);
+    setGameState(createNewGame(validFaction, MAP_RADIUS));
+  }, [validFaction]);
 
   const onMainMenu = useCallback(() => {
     router.back();

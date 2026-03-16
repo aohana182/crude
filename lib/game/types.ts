@@ -1,4 +1,4 @@
-export type Faction = 'army' | 'insurgents';
+export type Faction = 'coalition' | 'insurgents';
 
 export interface FactionInfo {
   id: Faction;
@@ -23,11 +23,11 @@ export interface GameHex {
   owner: number | null;
   unitTier: number | null;
   unitMoved: boolean;
-  hasTree: boolean;
+  hasNomad: boolean;
   hasCapital: boolean;
   hasCastle: boolean;
   hasGrave: boolean;
-  wasChopped: boolean;
+  wasRelocated: boolean;
 }
 
 export interface Territory {
@@ -52,6 +52,13 @@ export type GamePhase = 'setup' | 'playing' | 'game_over';
 
 export type PurchaseType = 'peasant' | 'castle' | null;
 
+export interface MapBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
 export interface GameState {
   hexes: Map<string, GameHex>;
   players: Player[];
@@ -64,6 +71,7 @@ export interface GameState {
   purchaseType: PurchaseType;
   combineMode: boolean;
   mapRadius: number;
+  mapBounds: MapBounds;
 }
 
 export function hexKey(q: number, r: number): string {

@@ -6,18 +6,20 @@ import { HEX_SIZE, TERRITORY_COLORS } from '@/lib/game/constants';
 import Colors from '@/constants/colors';
 
 const UNIT_SPRITES: Record<string, any> = {
-  army_0: require('@/assets/sprites/army_1.png'),
-  army_1: require('@/assets/sprites/army_2.png'),
-  army_2: require('@/assets/sprites/army_3.png'),
-  army_3: require('@/assets/sprites/army_4.png'),
-  insurgents_0: require('@/assets/sprites/insurgent_1.png'),
-  insurgents_1: require('@/assets/sprites/insurgent_2.png'),
-  insurgents_2: require('@/assets/sprites/insurgent_3.png'),
-  insurgents_3: require('@/assets/sprites/insurgent_4.png'),
+  coalition_0: require('@/assets/sprites/coalition_1.png'),
+  coalition_1: require('@/assets/sprites/coalition_2.png'),
+  coalition_2: require('@/assets/sprites/coalition_3.png'),
+  coalition_3: require('@/assets/sprites/coalition_4.png'),
+  insurgents_0: require('@/assets/sprites/insurgent_1_new.png'),
+  insurgents_1: require('@/assets/sprites/insurgent_2_new.png'),
+  insurgents_2: require('@/assets/sprites/insurgent_3_new.png'),
+  insurgents_3: require('@/assets/sprites/insurgent_4_new.png'),
 };
 
+const NOMAD_CAMP_SPRITE = require('@/assets/sprites/nomad_camp.png');
+
 const TOWER_SPRITES: Record<string, any> = {
-  army: require('@/assets/sprites/tower_army.png'),
+  coalition: require('@/assets/sprites/tower_army.png'),
   insurgents: require('@/assets/sprites/tower_insurgent.png'),
 };
 
@@ -119,35 +121,14 @@ function HexTileComponent({ hex, isSelected, isPurchaseTarget, targetType, facti
           />
         </G>
       )}
-      {hex.hasTree && hex.unitTier === null && !hex.hasGrave && (
-        <G>
-          <Line
-            x1={x}
-            y1={y + s * 0.25}
-            x2={x}
-            y2={y - s * 0.05}
-            stroke="#5D3A1A"
-            strokeWidth={1.5}
-          />
-          <Circle
-            cx={x}
-            cy={y - s * 0.15}
-            r={s * 0.22}
-            fill="#2D5A1E"
-          />
-          <Circle
-            cx={x - s * 0.1}
-            cy={y - s * 0.05}
-            r={s * 0.15}
-            fill="#3A7A2A"
-          />
-          <Circle
-            cx={x + s * 0.1}
-            cy={y - s * 0.05}
-            r={s * 0.15}
-            fill="#3A7A2A"
-          />
-        </G>
+      {hex.hasNomad && hex.unitTier === null && !hex.hasGrave && (
+        <SvgImage
+          href={NOMAD_CAMP_SPRITE}
+          x={x - spriteSize * 0.5}
+          y={y - spriteSize * 0.55}
+          width={spriteSize}
+          height={spriteSize}
+        />
       )}
       {hex.hasCastle && hex.unitTier === null && faction && (
         <SvgImage

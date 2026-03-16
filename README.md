@@ -1,2 +1,2 @@
-# Hex Command
+# Crude
 A turn-based hex strategy game built with Expo React Native.

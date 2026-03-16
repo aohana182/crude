@@ -1,15 +1,31 @@
-import { GameState, GameHex, Player, hexKey, HexCoord, Faction, Territory, PurchaseType } from './types';
+import { GameState, GameHex, Player, hexKey, HexCoord, Faction, Territory, PurchaseType, MapBounds } from './types';
 import { generateIslandMap, assignStartingPositions } from './mapGenerator';
 import {
   detectTerritories,
+  enforceMinTerritorySize,
   updateTerritoryEconomy,
   getTerritoryForHex,
   getHexDefenseStrength,
   isInSameTerritory,
+  mergeTerritoryTreasuries,
+  syncTerritoryTreasuries,
+  buildHexTerritoryMap,
 } from './territoryManager';
 import { executeAITurn } from './aiPlayer';
-import { PEASANT_COST, CASTLE_COST, UNIT_UPKEEP, UNIT_STRENGTH, PLAYER_COLORS } from './constants';
-import { getNeighbors, findConnectedRegion } from './hexUtils';
+import { PEASANT_COST, CASTLE_COST, UNIT_UPKEEP, UNIT_STRENGTH, PLAYER_COLORS, getTierForCombinedStrength } from './constants';
+import { getNeighbors, findConnectedRegion, hexToPixel } from './hexUtils';
+
+function computeMapBounds(hexes: Map<string, GameHex>): MapBounds {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const hex of hexes.values()) {
+    const { x, y } = hexToPixel(hex.q, hex.r);
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  return { minX, maxX, minY, maxY };
+}
 
 export function createNewGame(
   humanFaction: Faction,
@@ -17,7 +33,7 @@ export function createNewGame(
 ): GameState {
   const hexes = generateIslandMap(mapRadius);
 
-  const aiFaction: Faction = humanFaction === 'army' ? 'insurgents' : 'army';
+  const aiFaction: Faction = humanFaction === 'coalition' ? 'insurgents' : 'coalition';
 
   const players: Player[] = [
     { id: 0, faction: humanFaction, isHuman: true, alive: true, color: PLAYER_COLORS[0] },
@@ -31,6 +47,8 @@ export function createNewGame(
     t.treasury = Math.max(t.income, 15);
   }
 
+  const mapBounds = computeMapBounds(hexes);
+
   return {
     hexes,
     players,
@@ -43,6 +61,7 @@ export function createNewGame(
     purchaseType: null,
     combineMode: false,
     mapRadius,
+    mapBounds,
   };
 }
 
@@ -75,7 +94,7 @@ export function handleHexTap(state: GameState, q: number, r: number): GameState 
           const result = tryMergeUnits(state, state.selectedHex, { q, r });
           if (result !== state) return result;
         }
-        return { ...state, selectedHex: { q, r }, combineMode: false };
+        return { ...state, selectedHex: { q, r }, combineMode: state.combineMode };
       }
 
       const result = tryUnitAction(state, state.selectedHex, { q, r });
@@ -83,14 +102,14 @@ export function handleHexTap(state: GameState, q: number, r: number): GameState 
     }
 
     if (tappedHex.owner === state.currentPlayer) {
-      return { ...state, selectedHex: { q, r }, combineMode: false };
+      return { ...state, selectedHex: { q, r }, combineMode: state.combineMode };
     }
 
     return { ...state, selectedHex: null, combineMode: false };
   }
 
   if (tappedHex.owner === state.currentPlayer) {
-    return { ...state, selectedHex: { q, r }, combineMode: false };
+    return { ...state, selectedHex: { q, r }, combineMode: state.combineMode };
   }
 
   return { ...state, selectedHex: null, combineMode: false };
@@ -113,14 +132,7 @@ function tryMergeUnits(state: GameState, from: HexCoord, to: HexCoord): GameStat
   const sameTerritory = isInSameTerritory(from.q, from.r, to.q, to.r, state.territories);
   if (!sameTerritory) return state;
 
-  const combinedStrength = UNIT_STRENGTH[fromHex.unitTier] + UNIT_STRENGTH[toHex.unitTier];
-  let newTier = -1;
-  for (let i = 0; i < UNIT_STRENGTH.length; i++) {
-    if (UNIT_STRENGTH[i] === combinedStrength) {
-      newTier = i;
-      break;
-    }
-  }
+  const newTier = getTierForCombinedStrength(fromHex.unitTier, toHex.unitTier);
   if (newTier === -1 || newTier > 3) return state;
 
   const newHexes = cloneHexes(state.hexes);
@@ -132,7 +144,7 @@ function tryMergeUnits(state: GameState, from: HexCoord, to: HexCoord): GameStat
   newFrom.unitMoved = false;
 
   const newTerritories = detectTerritories(newHexes);
-  syncTreasuryToNewTerritories(state.territories, newTerritories);
+  syncTerritoryTreasuries(state.territories, newTerritories);
 
   return {
     ...state,
@@ -158,29 +170,21 @@ function tryUnitAction(state: GameState, from: HexCoord, to: HexCoord): GameStat
     );
 
     if (!sameTerritory) return state;
-
-    const isNeighbor = getNeighbors(from.q, from.r).some(
-      (n) => n.q === to.q && n.r === to.r,
-    );
-
-    if (!isNeighbor) return state;
     if (fromHex.unitMoved) return state;
 
-    if (toHex.hasTree) {
+    if (toHex.hasNomad) {
+      // Classic Slay: unit stays in place, clears the nomad, loses its turn
       const newHexes = cloneHexes(state.hexes);
       const newTo = newHexes.get(hexKey(to.q, to.r))!;
       const newFrom = newHexes.get(hexKey(from.q, from.r))!;
-      newTo.hasTree = false;
-      newTo.wasChopped = true;
-      newTo.unitTier = fromHex.unitTier;
-      newTo.unitMoved = true;
-      newFrom.unitTier = null;
-      newFrom.unitMoved = false;
+      newTo.hasNomad = false;
+      newTo.wasRelocated = true;
+      newFrom.unitMoved = true;
 
       const newTerritories = detectTerritories(newHexes);
-      syncTreasuryToNewTerritories(state.territories, newTerritories);
+      syncTerritoryTreasuries(state.territories, newTerritories);
 
-      return { ...state, hexes: newHexes, selectedHex: { q: to.q, r: to.r }, territories: newTerritories };
+      return { ...state, hexes: newHexes, selectedHex: { q: from.q, r: from.r }, territories: newTerritories };
     }
 
     if (toHex.hasGrave) {
@@ -189,12 +193,12 @@ function tryUnitAction(state: GameState, from: HexCoord, to: HexCoord): GameStat
       const newFrom = newHexes.get(hexKey(from.q, from.r))!;
       newTo.hasGrave = false;
       newTo.unitTier = fromHex.unitTier;
-      newTo.unitMoved = true;
+      newTo.unitMoved = false; // free movement within territory
       newFrom.unitTier = null;
       newFrom.unitMoved = false;
 
       const newTerritories = detectTerritories(newHexes);
-      syncTreasuryToNewTerritories(state.territories, newTerritories);
+      syncTerritoryTreasuries(state.territories, newTerritories);
 
       return { ...state, hexes: newHexes, selectedHex: { q: to.q, r: to.r }, territories: newTerritories };
     }
@@ -204,8 +208,8 @@ function tryUnitAction(state: GameState, from: HexCoord, to: HexCoord): GameStat
       const newTo = newHexes.get(hexKey(to.q, to.r))!;
       const newFrom = newHexes.get(hexKey(from.q, from.r))!;
       newTo.unitTier = fromHex.unitTier;
-      newTo.unitMoved = true;
-      newTo.hasTree = false;
+      newTo.unitMoved = false; // free movement within territory; only attacks/chops cost the action
+      newTo.hasNomad = false;
       newTo.hasGrave = false;
       newFrom.unitTier = null;
       newFrom.unitMoved = false;
@@ -227,9 +231,11 @@ function tryUnitAction(state: GameState, from: HexCoord, to: HexCoord): GameStat
     const isNeighbor = neighbors.some((n) => n.q === to.q && n.r === to.r);
     if (!isNeighbor) return state;
 
-    const defense = getHexDefenseStrength(to.q, to.r, state.hexes);
+    const hexTerritoryMap = buildHexTerritoryMap(state.territories);
+    const defense = getHexDefenseStrength(to.q, to.r, state.hexes, hexTerritoryMap);
 
-    if (unitStrength <= defense) return state;
+    // strict < so equal strength resolves to attacker win (classic Slay)
+    if (unitStrength < defense) return state;
 
     const capturedCapital = toHex.hasCapital;
     const oldOwner = toHex.owner;
@@ -240,7 +246,7 @@ function tryUnitAction(state: GameState, from: HexCoord, to: HexCoord): GameStat
     newTo.owner = state.currentPlayer;
     newTo.unitTier = fromHex.unitTier;
     newTo.unitMoved = true;
-    newTo.hasTree = false;
+    newTo.hasNomad = false;
     newTo.hasGrave = false;
     newTo.hasCapital = false;
     newTo.hasCastle = false;
@@ -297,7 +303,7 @@ function tryUnitAction(state: GameState, from: HexCoord, to: HexCoord): GameStat
     newTo.owner = state.currentPlayer;
     newTo.unitTier = fromHex.unitTier;
     newTo.unitMoved = true;
-    newTo.hasTree = false;
+    newTo.hasNomad = false;
     newTo.hasGrave = false;
     newFrom.unitTier = null;
     newFrom.unitMoved = false;
@@ -339,30 +345,28 @@ function tryPlacePurchase(state: GameState, q: number, r: number): GameState {
 
   if (purchaseType === 'peasant') {
     newHex.unitTier = 0;
-    newHex.unitMoved = true;
+    newHex.unitMoved = false;
   } else {
     newHex.hasCastle = true;
   }
-  newHex.hasTree = false;
+  newHex.hasNomad = false;
   newHex.hasGrave = false;
 
   const newTerritories = detectTerritories(newHexes);
-  for (const nt of newTerritories) {
-    const matchKey = hexKey(q, r);
-    const isThisTerritory = nt.hexes.some(h => hexKey(h.q, h.r) === matchKey);
-    if (isThisTerritory && nt.owner === state.currentPlayer) {
-      syncTreasuryToNewTerritories(state.territories, [nt]);
-      nt.treasury -= cost;
-    } else {
-      syncTreasuryToNewTerritories(state.territories, [nt]);
-    }
+  syncTerritoryTreasuries(state.territories, newTerritories);
+  const purchasedTerritory = newTerritories.find(
+    nt => nt.owner === state.currentPlayer &&
+          nt.hexes.some(h => hexKey(h.q, h.r) === hexKey(q, r)),
+  );
+  if (purchasedTerritory) {
+    purchasedTerritory.treasury -= cost;
   }
 
   return {
     ...state,
     hexes: newHexes,
     purchaseType: null,
-    selectedHex: null,
+    selectedHex: purchaseType === 'peasant' ? { q, r } : null,
     territories: newTerritories,
   };
 }
@@ -391,7 +395,7 @@ export function endTurn(state: GameState): GameState {
   const hexes = cloneHexes(state.hexes);
   const players = state.players.map(p => ({ ...p }));
 
-  convertGravesToTrees(hexes);
+  convertGravesToNomads(hexes);
 
   for (const hex of hexes.values()) {
     if (hex.owner === state.currentPlayer) {
@@ -407,12 +411,14 @@ export function endTurn(state: GameState): GameState {
   }
 
   let territories = detectTerritories(hexes);
-  syncTreasuryToNewTerritories(state.territories, territories);
+  syncTerritoryTreasuries(state.territories, territories);
+  enforceMinTerritorySize(hexes, territories);
   territories = updateTerritoryEconomy(territories, hexes, currentPlayerIdx);
 
   let winner = checkWinner(hexes, players);
   if (winner !== null) {
     return {
+      ...state,
       hexes,
       players,
       territories,
@@ -423,7 +429,6 @@ export function endTurn(state: GameState): GameState {
       selectedHex: null,
       purchaseType: null,
       combineMode: false,
-      mapRadius: state.mapRadius,
     };
   }
 
@@ -435,6 +440,7 @@ export function endTurn(state: GameState): GameState {
     currentPlayer.alive = false;
     winner = checkWinner(hexes, players);
     return {
+      ...state,
       hexes,
       players,
       territories,
@@ -445,13 +451,13 @@ export function endTurn(state: GameState): GameState {
       selectedHex: null,
       purchaseType: null,
       combineMode: false,
-      mapRadius: state.mapRadius,
     };
   }
 
   if (!currentPlayer.isHuman && currentPlayer.alive) {
     try {
       let aiState: GameState = {
+        ...state,
         hexes,
         players,
         territories,
@@ -462,15 +468,14 @@ export function endTurn(state: GameState): GameState {
         selectedHex: null,
         purchaseType: null,
         combineMode: false,
-        mapRadius: state.mapRadius,
       };
       aiState = executeAITurn(aiState);
 
       const aiHexes = cloneHexes(aiState.hexes);
 
-      convertGravesToTrees(aiHexes);
+      convertGravesToNomads(aiHexes);
       growTrees(aiHexes);
-      growTreesOnPlayerLand(aiHexes);
+      resetChoppedFlags(aiHexes);
 
       for (const hex of aiHexes.values()) {
         if (hex.owner === currentPlayerIdx) {
@@ -484,12 +489,14 @@ export function endTurn(state: GameState): GameState {
       }
 
       territories = detectTerritories(aiHexes);
-      syncTreasuryToNewTerritories(aiState.territories, territories);
+      syncTerritoryTreasuries(aiState.territories, territories);
+      enforceMinTerritorySize(aiHexes, territories);
       territories = updateTerritoryEconomy(territories, aiHexes, nextPlayerIdx);
 
       winner = checkWinner(aiHexes, players);
 
       return {
+        ...state,
         hexes: aiHexes,
         players,
         territories,
@@ -500,7 +507,6 @@ export function endTurn(state: GameState): GameState {
         selectedHex: null,
         purchaseType: null,
         combineMode: false,
-        mapRadius: state.mapRadius,
       };
     } catch (e) {
       console.error('AI turn error:', e);
@@ -509,6 +515,7 @@ export function endTurn(state: GameState): GameState {
         turnNumber += 1;
       }
       return {
+        ...state,
         hexes,
         players,
         territories,
@@ -519,12 +526,12 @@ export function endTurn(state: GameState): GameState {
         selectedHex: null,
         purchaseType: null,
         combineMode: false,
-        mapRadius: state.mapRadius,
       };
     }
   }
 
   return {
+    ...state,
     hexes,
     players,
     territories,
@@ -535,92 +542,53 @@ export function endTurn(state: GameState): GameState {
     selectedHex: null,
     purchaseType: null,
     combineMode: false,
-    mapRadius: state.mapRadius,
   };
 }
 
-function convertGravesToTrees(hexes: Map<string, GameHex>): void {
+function convertGravesToNomads(hexes: Map<string, GameHex>): void {
   for (const hex of hexes.values()) {
     if (hex.hasGrave) {
       hex.hasGrave = false;
-      hex.hasTree = true;
+      hex.hasNomad = true;
     }
   }
 }
 
+function resetChoppedFlags(hexes: Map<string, GameHex>): void {
+  for (const hex of hexes.values()) {
+    hex.wasRelocated = false;
+  }
+}
+
+/**
+ * Grow nomad camps (trees) on eligible hexes.
+ * Per PRD §14.5 (classic Slay rule): a camp spreads only to hexes
+ * with 2+ adjacent camps. playerLandRate applies a reduced chance
+ * when spreading onto owned territory vs neutral land.
+ */
 function growTrees(hexes: Map<string, GameHex>): void {
-  const treesToGrow: string[] = [];
+  const toGrow: string[] = [];
 
   for (const [key, hex] of hexes) {
-    if (hex.hasTree || hex.unitTier !== null || hex.hasCapital || hex.hasCastle || hex.hasGrave) continue;
-    if (hex.wasChopped) continue;
+    if (hex.hasNomad || hex.unitTier !== null || hex.hasCapital || hex.hasCastle || hex.hasGrave) continue;
+    if (hex.wasRelocated) continue;
 
-    const neighbors = getNeighbors(hex.q, hex.r);
     let adjacentTreeCount = 0;
-    let isCoastal = false;
-
-    for (const n of neighbors) {
-      const nk = hexKey(n.q, n.r);
-      const nh = hexes.get(nk);
-      if (!nh) {
-        isCoastal = true;
-      } else if (nh.hasTree) {
-        adjacentTreeCount++;
-      }
+    for (const n of getNeighbors(hex.q, hex.r)) {
+      const nh = hexes.get(hexKey(n.q, n.r));
+      if (nh?.hasNomad) adjacentTreeCount++;
     }
 
-    if (!isCoastal || adjacentTreeCount === 0) continue;
+    // Classic Slay: requires 2+ adjacent camps to spread
+    if (adjacentTreeCount < 2) continue;
 
-    const growChance = adjacentTreeCount >= 2 ? 0.25 : 0.15;
-
-    if (Math.random() < growChance) {
-      treesToGrow.push(key);
-    }
+    const chance = hex.owner === null ? 0.25 : 0.18;
+    if (Math.random() < chance) toGrow.push(key);
   }
 
-  for (const key of treesToGrow) {
+  for (const key of toGrow) {
     const hex = hexes.get(key);
-    if (hex) {
-      hex.hasTree = true;
-    }
-  }
-}
-
-function growTreesOnPlayerLand(hexes: Map<string, GameHex>): void {
-  const treesToGrow: string[] = [];
-
-  for (const [key, hex] of hexes) {
-    if (hex.hasTree || hex.unitTier !== null || hex.hasCapital || hex.hasCastle || hex.hasGrave) continue;
-    if (hex.owner === null) continue;
-    if (hex.wasChopped) continue;
-
-    const neighbors = getNeighbors(hex.q, hex.r);
-    let adjacentTreeCount = 0;
-    let isCoastal = false;
-
-    for (const n of neighbors) {
-      const nk = hexKey(n.q, n.r);
-      const nh = hexes.get(nk);
-      if (!nh) {
-        isCoastal = true;
-      } else if (nh.hasTree) {
-        adjacentTreeCount++;
-      }
-    }
-
-    if (!isCoastal || adjacentTreeCount === 0) continue;
-
-    const playerGrowChance = adjacentTreeCount >= 2 ? 0.18 : 0.10;
-    if (Math.random() < playerGrowChance) {
-      treesToGrow.push(key);
-    }
-  }
-
-  for (const key of treesToGrow) {
-    const hex = hexes.get(key);
-    if (hex) {
-      hex.hasTree = true;
-    }
+    if (hex) hex.hasNomad = true;
   }
 }
 
@@ -639,58 +607,3 @@ function checkWinner(hexes: Map<string, GameHex>, players: Player[]): number | n
   return null;
 }
 
-function syncTreasuryToNewTerritories(
-  oldTerritories: Territory[],
-  newTerritories: Territory[],
-): void {
-  for (const newT of newTerritories) {
-    let bestMatch: Territory | null = null;
-    let bestOverlap = 0;
-
-    const newHexSet = new Set(newT.hexes.map((h: HexCoord) => hexKey(h.q, h.r)));
-
-    for (const oldT of oldTerritories) {
-      if (oldT.owner !== newT.owner) continue;
-      let overlap = 0;
-      for (const h of oldT.hexes) {
-        if (newHexSet.has(hexKey(h.q, h.r))) overlap++;
-      }
-      if (overlap > bestOverlap) {
-        bestOverlap = overlap;
-        bestMatch = oldT;
-      }
-    }
-
-    if (bestMatch) {
-      newT.treasury = bestMatch.treasury;
-    }
-  }
-}
-
-function mergeTerritoryTreasuries(
-  oldTerritories: Territory[],
-  newTerritories: Territory[],
-): void {
-  for (const newT of newTerritories) {
-    const newHexSet = new Set(newT.hexes.map((h: HexCoord) => hexKey(h.q, h.r)));
-
-    let totalTreasury = 0;
-    let matchCount = 0;
-
-    for (const oldT of oldTerritories) {
-      if (oldT.owner !== newT.owner) continue;
-      let overlap = 0;
-      for (const h of oldT.hexes) {
-        if (newHexSet.has(hexKey(h.q, h.r))) overlap++;
-      }
-      if (overlap > 0) {
-        totalTreasury += oldT.treasury;
-        matchCount++;
-      }
-    }
-
-    if (matchCount > 0) {
-      newT.treasury = totalTreasury;
-    }
-  }
-}

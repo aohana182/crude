@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Hex For Oil",
-    "slug": "hexforoil",
+    "name": "Crude",
+    "slug": "crude",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "hexforoil",
+    "scheme": "crude",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -15,10 +15,15 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.hexforoil.app"
+      "bundleIdentifier": "com.crude.app"
     },
     "android": {
-      "package": "com.hexforoil.app",
+      "package": "com.crude.app",
+      "buildTypes": {
+        "debug": { "abiFilters": ["arm64-v8a", "armeabi-v7a"] },
+        "release": { "abiFilters": ["arm64-v8a", "armeabi-v7a"] }
+      },
+      "enableProguardInReleaseBuilds": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -42,6 +47,14 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://replit.com/"
+      },
+      "eas": {
+        "projectId": "493899bd-0a8c-4fa3-bf26-b0e5e6345812"
+      }
     }
   }
 }
