@@ -13,7 +13,7 @@ export const FACTIONS: Record<string, FactionInfo> = {
   coalition: {
     id: 'coalition',
     name: 'Coalition',
-    unitNames: ['Ranger', 'Sergeant', 'Commander', 'General'],
+    unitNames: ['Private', 'Sergeant', 'Lieutenant', 'Major'],
     colors: {
       primary: '#1B3A5C',
       secondary: '#4A90D9',
@@ -24,7 +24,7 @@ export const FACTIONS: Record<string, FactionInfo> = {
   insurgents: {
     id: 'insurgents',
     name: 'Insurgents',
-    unitNames: ['Militant', 'Raider', 'Warlord', 'Commander'],
+    unitNames: ['Fedayeen', 'Jihadi', 'Takfiri', 'Salafi'],
     colors: {
       primary: '#2A1A0A',
       secondary: '#B8860B',
