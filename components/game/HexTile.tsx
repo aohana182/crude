@@ -32,6 +32,8 @@ const TOWER_SPRITES: Record<string, any> = {
   insurgents: require('@/assets/sprites/tower_insurgent.png'),
 };
 
+const NEUTRAL_CASTLE_SPRITE = require('@/assets/sprites/neutral castle.png');
+
 interface HexTileProps {
   hex: GameHex;
   isSelected: boolean;
@@ -82,7 +84,14 @@ function HexTileComponent({ hex, isSelected, isPurchaseTarget, targetType, facti
 
   const s = HEX_SIZE;
   const faction = hex.owner !== null ? factions[hex.owner] : null;
-  const spriteSize = s * 1.3;
+
+  // Buildings fill their PNG edge-to-edge — keep within hex inradius (s * √3/2 ≈ s * 0.866)
+  const buildingSize = s * 1.65;
+  // Unit cells have internal padding — actual character is ~70% of cell, so slightly larger is fine
+  const unitSize = s * 1.55;
+
+  // Shared vertical centering offset (slightly above hex center looks natural)
+  const vOffset = 0.45;
 
   return (
     <G>
@@ -133,36 +142,36 @@ function HexTileComponent({ hex, isSelected, isPurchaseTarget, targetType, facti
       {hex.hasNomad && hex.unitTier === null && !hex.hasGrave && (
         <SvgImage
           href={NOMAD_CAMP_SPRITE}
-          x={x - spriteSize * 0.5}
-          y={y - spriteSize * 0.55}
-          width={spriteSize}
-          height={spriteSize}
+          x={x - buildingSize * 0.5}
+          y={y - buildingSize * vOffset}
+          width={buildingSize}
+          height={buildingSize}
         />
       )}
-      {hex.hasCastle && hex.unitTier === null && faction && (
+      {hex.hasCastle && hex.unitTier === null && (
         <SvgImage
-          href={TOWER_SPRITES[faction]}
-          x={x - spriteSize * 0.5}
-          y={y - spriteSize * 0.55}
-          width={spriteSize}
-          height={spriteSize}
+          href={faction ? TOWER_SPRITES[faction] : NEUTRAL_CASTLE_SPRITE}
+          x={x - buildingSize * 0.5}
+          y={y - buildingSize * vOffset}
+          width={buildingSize}
+          height={buildingSize}
         />
       )}
       {hex.hasCapital && hex.unitTier === null && !hex.hasCastle && faction && (
         <SvgImage
           href={CAPITAL_SPRITES[faction]}
-          x={x - spriteSize * 0.5}
-          y={y - spriteSize * 0.6}
-          width={spriteSize}
-          height={spriteSize}
+          x={x - buildingSize * 0.5}
+          y={y - buildingSize * vOffset}
+          width={buildingSize}
+          height={buildingSize}
         />
       )}
       {hex.unitTier !== null && faction && (() => {
         const spriteKey = `${faction}_${hex.unitTier}`;
         const [col, row] = UNIT_GRID[spriteKey] ?? [0, 0];
         const clipId = `uc_${hex.q}_${hex.r}`;
-        const imgX = x - spriteSize * 0.5;
-        const imgY = y - spriteSize * 0.55;
+        const imgX = x - unitSize * 0.5;
+        const imgY = y - unitSize * vOffset;
         return (
           <G>
             {isSelected && (
@@ -180,21 +189,21 @@ function HexTileComponent({ hex, isSelected, isPurchaseTarget, targetType, facti
               <Circle
                 cx={x}
                 cy={y}
-                r={spriteSize * 0.4}
+                r={unitSize * 0.4}
                 fill="rgba(0,0,0,0.35)"
               />
             )}
             <Defs>
               <ClipPath id={clipId}>
-                <Rect x={imgX} y={imgY} width={spriteSize} height={spriteSize} />
+                <Rect x={imgX} y={imgY} width={unitSize} height={unitSize} />
               </ClipPath>
             </Defs>
             <SvgImage
               href={UNITS_SPRITE}
-              x={imgX - col * spriteSize}
-              y={imgY - row * spriteSize}
-              width={spriteSize * 4}
-              height={spriteSize * 2}
+              x={imgX - col * unitSize}
+              y={imgY - row * unitSize}
+              width={unitSize * 4}
+              height={unitSize * 2}
               clipPath={`url(#${clipId})`}
               opacity={hex.unitMoved ? 0.5 : 1}
             />
