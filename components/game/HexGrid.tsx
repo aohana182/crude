@@ -1,7 +1,6 @@
 import React, { useMemo, useCallback, useState, useRef } from 'react';
 import { View, StyleSheet, useWindowDimensions, Pressable, Platform } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { View as Animated } from 'react-native';
 import Svg from 'react-native-svg';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GameState, hexKey, Faction } from '@/lib/game/types';
@@ -285,7 +284,7 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
   return (
     <View style={[styles.container, { width: svgWidth, height: svgHeight }]} {...webWheelProps}>
       <GestureDetector gesture={composed}>
-        <Animated.View style={StyleSheet.absoluteFillObject} collapsable={false}>
+        <View style={StyleSheet.absoluteFillObject} collapsable={false}>
           <Svg
             width={svgWidth}
             height={svgHeight}
@@ -309,7 +308,7 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
               );
             })}
           </Svg>
-        </Animated.View>
+        </View>
       </GestureDetector>
 
       <Pressable
