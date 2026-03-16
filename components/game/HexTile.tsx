@@ -1,22 +1,31 @@
 import React, { memo } from 'react';
-import { Polygon, G, Text as SvgText, Circle, Line, Rect, Image as SvgImage } from 'react-native-svg';
+import { Polygon, G, Text as SvgText, Circle, Line, Rect, Image as SvgImage, Defs, ClipPath } from 'react-native-svg';
 import { GameHex, Faction } from '@/lib/game/types';
 import { getHexCorners, hexToPixel } from '@/lib/game/hexUtils';
 import { HEX_SIZE, TERRITORY_COLORS } from '@/lib/game/constants';
 import Colors from '@/constants/colors';
 
-const UNIT_SPRITES: Record<string, any> = {
-  coalition_0: require('@/assets/sprites/coalition_1.png'),
-  coalition_1: require('@/assets/sprites/coalition_2.png'),
-  coalition_2: require('@/assets/sprites/coalition_3.png'),
-  coalition_3: require('@/assets/sprites/coalition_4.png'),
-  insurgents_0: require('@/assets/sprites/insurgent_1_new.png'),
-  insurgents_1: require('@/assets/sprites/insurgent_2_new.png'),
-  insurgents_2: require('@/assets/sprites/insurgent_3_new.png'),
-  insurgents_3: require('@/assets/sprites/insurgent_4_new.png'),
+// Single sprite sheet: 4 columns (tiers 1-4) × 2 rows (coalition top, insurgents bottom)
+const UNITS_SPRITE = require('@/assets/sprites/units.png');
+
+// [col, row] coordinates within the 4×2 grid
+const UNIT_GRID: Record<string, [number, number]> = {
+  coalition_0:  [0, 0],
+  coalition_1:  [1, 0],
+  coalition_2:  [2, 0],
+  coalition_3:  [3, 0],
+  insurgents_0: [0, 1],
+  insurgents_1: [1, 1],
+  insurgents_2: [2, 1],
+  insurgents_3: [3, 1],
 };
 
 const NOMAD_CAMP_SPRITE = require('@/assets/sprites/nomad_camp.png');
+
+const CAPITAL_SPRITES: Record<string, any> = {
+  coalition: require('@/assets/sprites/coalition_capital.png'),
+  insurgents: require('@/assets/sprites/insurgent_capital.png'),
+};
 
 const TOWER_SPRITES: Record<string, any> = {
   coalition: require('@/assets/sprites/tower_army.png'),
@@ -139,60 +148,59 @@ function HexTileComponent({ hex, isSelected, isPurchaseTarget, targetType, facti
           height={spriteSize}
         />
       )}
-      {hex.hasCapital && hex.unitTier === null && !hex.hasCastle && (
-        <G>
-          <Rect
-            x={x - s * 0.25}
-            y={y - s * 0.05}
-            width={s * 0.5}
-            height={s * 0.35}
-            fill="#B8860B"
-            rx={1}
-          />
-          <Polygon
-            points={`${x - s * 0.3},${y - s * 0.05} ${x},${y - s * 0.3} ${x + s * 0.3},${y - s * 0.05}`}
-            fill="#D4A020"
-          />
-          <Rect
-            x={x - s * 0.06}
-            y={y + s * 0.05}
-            width={s * 0.12}
-            height={s * 0.22}
-            fill="#7A5A0A"
-          />
-        </G>
+      {hex.hasCapital && hex.unitTier === null && !hex.hasCastle && faction && (
+        <SvgImage
+          href={CAPITAL_SPRITES[faction]}
+          x={x - spriteSize * 0.5}
+          y={y - spriteSize * 0.6}
+          width={spriteSize}
+          height={spriteSize}
+        />
       )}
-      {hex.unitTier !== null && faction && (
-        <G>
-          {isSelected && (
-            <Circle
-              cx={x}
-              cy={y}
-              r={HEX_SIZE * 0.52}
-              fill="none"
-              stroke="#D4A020"
-              strokeWidth={2}
-              opacity={0.8}
+      {hex.unitTier !== null && faction && (() => {
+        const spriteKey = `${faction}_${hex.unitTier}`;
+        const [col, row] = UNIT_GRID[spriteKey] ?? [0, 0];
+        const clipId = `uc_${hex.q}_${hex.r}`;
+        const imgX = x - spriteSize * 0.5;
+        const imgY = y - spriteSize * 0.55;
+        return (
+          <G>
+            {isSelected && (
+              <Circle
+                cx={x}
+                cy={y}
+                r={HEX_SIZE * 0.52}
+                fill="none"
+                stroke="#D4A020"
+                strokeWidth={2}
+                opacity={0.8}
+              />
+            )}
+            {hex.unitMoved && (
+              <Circle
+                cx={x}
+                cy={y}
+                r={spriteSize * 0.4}
+                fill="rgba(0,0,0,0.35)"
+              />
+            )}
+            <Defs>
+              <ClipPath id={clipId}>
+                <Rect x={imgX} y={imgY} width={spriteSize} height={spriteSize} />
+              </ClipPath>
+            </Defs>
+            <SvgImage
+              href={UNITS_SPRITE}
+              x={imgX - col * spriteSize}
+              y={imgY - row * spriteSize}
+              width={spriteSize * 4}
+              height={spriteSize * 2}
+              clipPath={`url(#${clipId})`}
+              opacity={hex.unitMoved ? 0.5 : 1}
             />
-          )}
-          {hex.unitMoved && (
-            <Circle
-              cx={x}
-              cy={y}
-              r={spriteSize * 0.4}
-              fill="rgba(0,0,0,0.35)"
-            />
-          )}
-          <SvgImage
-            href={UNIT_SPRITES[`${faction}_${hex.unitTier}`]}
-            x={x - spriteSize * 0.5}
-            y={y - spriteSize * 0.55}
-            width={spriteSize}
-            height={spriteSize}
-            opacity={hex.unitMoved ? 0.5 : 1}
-          />
-        </G>
-      )}
+          </G>
+        );
+      })()}
     </G>
   );
 }

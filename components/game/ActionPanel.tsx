@@ -6,10 +6,9 @@ import { FACTIONS, PEASANT_COST, CASTLE_COST } from '@/lib/game/constants';
 import { getTerritoryForHex } from '@/lib/game/territoryManager';
 import Colors from '@/constants/colors';
 
-const PEASANT_SPRITES: Record<string, any> = {
-  coalition: require('@/assets/sprites/coalition_1.png'),
-  insurgents: require('@/assets/sprites/insurgent_1_new.png'),
-};
+const UNITS_SPRITE = require('@/assets/sprites/units.png');
+// Row in sprite sheet: coalition=0, insurgents=1 (tier-0 is always col 0)
+const FACTION_ROW: Record<string, number> = { coalition: 0, insurgents: 1 };
 
 const CASTLE_SPRITES: Record<string, any> = {
   coalition: require('@/assets/sprites/tower_army.png'),
@@ -161,10 +160,16 @@ export default function ActionPanel({ gameState, onBuyUnit, onCombine, onDeselec
             onPress={() => canAffordPeasant && onBuyUnit('peasant')}
             disabled={!canAffordPeasant}
           >
-            <Image
-              source={PEASANT_SPRITES[currentPlayer.faction]}
-              style={[styles.buttonSprite, !canAffordPeasant && { opacity: 0.4 }]}
-            />
+            <View style={[styles.buttonSprite, { overflow: 'hidden' }, !canAffordPeasant && { opacity: 0.4 }]}>
+              <Image
+                source={UNITS_SPRITE}
+                style={{
+                  width: styles.buttonSprite.width * 4,
+                  height: styles.buttonSprite.height * 2,
+                  marginTop: -(FACTION_ROW[currentPlayer.faction] ?? 0) * styles.buttonSprite.height,
+                }}
+              />
+            </View>
             <Text
               style={[
                 styles.buyName,
