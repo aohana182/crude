@@ -517,7 +517,7 @@ function aiCombineUnits(state: GameState, playerId: number): GameState {
       for (const coord of territory.hexes) {
         const key = hexKey(coord.q, coord.r);
         const hex = state.hexes.get(key);
-        if (hex && hex.unitTier !== null) {
+        if (hex && hex.unitTier !== null && !hex.unitMoved) {
           units.push({ key, hex, coord });
         }
       }
