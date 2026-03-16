@@ -8,11 +8,26 @@ function seededNoise(q: number, r: number, seed: number): number {
   return (h & 0x7fffffff) / 0x7fffffff;
 }
 
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function hexDist(aq: number, ar: number, bq: number, br: number): number {
+  return Math.max(Math.abs(aq - bq), Math.abs(ar - br), Math.abs((aq + ar) - (bq + br)));
+}
+
 export function generateIslandMap(radius: number): Map<string, GameHex> {
   while (true) {
     const { hexes, seed } = buildIslandShape(radius);
-    if (hexes.size >= 80) {
-      addTrees(hexes, seed);
+    if (hexes.size >= 100) {
+      carveLakes(hexes, radius, seed);
+      if (hexes.size < 90) continue;
+      addTreeClusters(hexes, seed);
+      placeNeutralCastles(hexes, seed);
       return hexes;
     }
   }
@@ -29,26 +44,23 @@ function buildIslandShape(radius: number): { hexes: Map<string, GameHex>; seed: 
       const dist = Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r));
       const normalizedDist = dist / radius;
 
-      const n1 = seededNoise(q, r, seed) * 0.5;
-      const n2 = seededNoise(q * 3 + 7, r * 3 + 13, seed + 999) * 0.3;
-      const n3 = seededNoise(q * 7 + 31, r * 7 + 41, seed + 5555) * 0.2;
-      const totalNoise = n1 + n2 + n3;
+      // 4 noise octaves for dramatic, irregular coastline
+      const n1 = seededNoise(q, r, seed) * 0.40;
+      const n2 = seededNoise(q * 2 + 5, r * 2 + 11, seed + 999) * 0.28;
+      const n3 = seededNoise(q * 5 + 17, r * 5 + 23, seed + 2222) * 0.20;
+      const n4 = seededNoise(q * 11 + 37, r * 11 + 43, seed + 4444) * 0.12;
+      const totalNoise = n1 + n2 + n3 + n4;
 
-      const edgeFactor = Math.pow(normalizedDist, 1.5);
-      const keepChance = 1.0 - edgeFactor + totalNoise * 0.6;
+      // Sharper edge falloff → more dramatic peninsulas and bays
+      const edgeFactor = Math.pow(normalizedDist, 2.2);
+      const keepChance = 1.0 - edgeFactor + totalNoise * 0.80;
 
-      if (dist <= 3 || (keepChance > 0.45 && normalizedDist < 0.95)) {
+      if (dist <= 2 || (keepChance > 0.40 && normalizedDist < 0.98)) {
         hexes.set(hexKey(q, r), {
-          q,
-          r,
-          owner: null,
-          unitTier: null,
-          unitMoved: false,
-          hasNomad: false,
-          hasCapital: false,
-          hasCastle: false,
-          hasGrave: false,
-          wasRelocated: false,
+          q, r,
+          owner: null, unitTier: null, unitMoved: false,
+          hasNomad: false, hasCapital: false, hasCastle: false,
+          hasGrave: false, wasRelocated: false,
         });
       }
     }
@@ -61,33 +73,122 @@ function buildIslandShape(radius: number): { hexes: Map<string, GameHex>; seed: 
   return { hexes, seed };
 }
 
-function addTrees(hexes: Map<string, GameHex>, seed: number): void {
-  for (const hex of hexes.values()) {
-    const neighbors = getNeighbors(hex.q, hex.r);
-    let landNeighborCount = 0;
-    for (const n of neighbors) {
-      if (hexes.has(hexKey(n.q, n.r))) landNeighborCount++;
+// Carve interior lakes — connected inland water bodies
+function carveLakes(hexes: Map<string, GameHex>, radius: number, seed: number): void {
+  const lakeCount = 2 + Math.floor(radius / 8);
+
+  for (let i = 0; i < lakeCount; i++) {
+    // Find an interior candidate (not too close to edge)
+    const interiorKeys = Array.from(hexes.keys()).filter(k => {
+      const [q, r] = k.split(',').map(Number);
+      return Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) < radius * 0.55;
+    });
+    if (interiorKeys.length === 0) continue;
+
+    const idx = Math.floor(seededNoise(i * 17, i * 31, seed + 77777) * interiorKeys.length) % interiorKeys.length;
+    const [cq, cr] = interiorKeys[idx].split(',').map(Number);
+
+    const lakeSize = 4 + Math.floor(seededNoise(i * 7, i * 3, seed + 88888) * 4);
+    const lakeSet = new Set<string>([hexKey(cq, cr)]);
+    const queue: [number, number][] = [[cq, cr]];
+
+    while (lakeSet.size < lakeSize && queue.length > 0) {
+      const [lq, lr] = queue.shift()!;
+      for (const n of getNeighbors(lq, lr)) {
+        if (lakeSet.size >= lakeSize) break;
+        const nk = hexKey(n.q, n.r);
+        const dist = Math.max(Math.abs(n.q), Math.abs(n.r), Math.abs(n.q + n.r));
+        if (hexes.has(nk) && !lakeSet.has(nk) && dist > 2) {
+          lakeSet.add(nk);
+          queue.push([n.q, n.r]);
+        }
+      }
     }
 
-    const isCoastal = landNeighborCount < 6;
+    for (const k of lakeSet) hexes.delete(k);
+    removeDisconnectedHexes(hexes);
+    if (hexes.size < 90) break; // stop if map getting too small
+  }
+}
 
-    if (isCoastal && seededNoise(hex.q * 11, hex.r * 17, seed + 4444) > 0.75) {
-      hex.hasNomad = true;
-    } else if (!isCoastal && seededNoise(hex.q * 23, hex.r * 29, seed + 6666) > 0.92) {
-      hex.hasNomad = true;
+// Forest clusters instead of scattered individual trees
+function addTreeClusters(hexes: Map<string, GameHex>, seed: number): void {
+  const allKeys = Array.from(hexes.keys());
+  const clusterCount = Math.floor(allKeys.length / 16);
+
+  // Deterministic shuffle for cluster centers
+  const centerIndices = Array.from({ length: allKeys.length }, (_, i) => i)
+    .sort((a, b) => seededNoise(a * 3 + 7, a * 11 + 13, seed + 12345) - seededNoise(b * 3 + 7, b * 11 + 13, seed + 12345));
+
+  for (let ci = 0; ci < Math.min(clusterCount, centerIndices.length); ci++) {
+    const centerKey = allKeys[centerIndices[ci]];
+    const [cq, cr] = centerKey.split(',').map(Number);
+    const center = hexes.get(centerKey);
+    if (!center) continue;
+
+    // Mark center
+    center.hasNomad = true;
+
+    // Spread to ring-1 with ~55% chance
+    for (const n of getNeighbors(cq, cr)) {
+      const nk = hexKey(n.q, n.r);
+      const nh = hexes.get(nk);
+      if (!nh) continue;
+      if (seededNoise(n.q * 3 + ci, n.r * 7 + ci, seed + 23456) > 0.45) {
+        nh.hasNomad = true;
+        // Spread to ring-2 with ~20% chance for dense forest cores
+        for (const nn of getNeighbors(n.q, n.r)) {
+          const nnh = hexes.get(hexKey(nn.q, nn.r));
+          if (!nnh) continue;
+          if (seededNoise(nn.q * 11 + ci, nn.r * 13 + ci, seed + 34567) > 0.80) {
+            nnh.hasNomad = true;
+          }
+        }
+      }
     }
+  }
+}
+
+// Place neutral castles on strategic hexes (chokepoints, central land)
+function placeNeutralCastles(hexes: Map<string, GameHex>, seed: number): void {
+  const castleCount = Math.min(5, Math.max(2, Math.floor(hexes.size / 35)));
+
+  const scored: { key: string; score: number }[] = [];
+  for (const [key, hex] of hexes) {
+    if (hex.hasNomad) continue;
+
+    const nbrs = getNeighbors(hex.q, hex.r);
+    const landCount = nbrs.filter(n => hexes.has(hexKey(n.q, n.r))).length;
+    const dist = Math.max(Math.abs(hex.q), Math.abs(hex.r), Math.abs(hex.q + hex.r));
+
+    // Prefer chokepoints (3-4 land neighbors) and moderate distance from center
+    const chokeScore = landCount <= 3 ? 3 : landCount <= 4 ? 1 : 0;
+    const posScore = dist > 2 ? 2 : 0;
+    const noiseScore = seededNoise(hex.q * 7, hex.r * 11, seed + 99999) * 2;
+
+    scored.push({ key, score: chokeScore + posScore + noiseScore });
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+
+  const placed: [number, number][] = [];
+  const minDist = 4;
+  for (const { key } of scored) {
+    if (placed.length >= castleCount) break;
+    const [q, r] = key.split(',').map(Number);
+    if (placed.some(([pq, pr]) => hexDist(q, r, pq, pr) < minDist)) continue;
+    placed.push([q, r]);
+    hexes.get(key)!.hasCastle = true;
   }
 }
 
 function removeDisconnectedHexes(hexes: Map<string, GameHex>): void {
   if (hexes.size === 0) return;
-
   const firstKey = hexes.keys().next().value!;
   const [sq, sr] = firstKey.split(',').map(Number);
   const visited = new Set<string>();
   const queue: HexCoord[] = [{ q: sq, r: sr }];
   visited.add(firstKey);
-
   while (queue.length > 0) {
     const current = queue.shift()!;
     for (const n of getNeighbors(current.q, current.r)) {
@@ -98,39 +199,31 @@ function removeDisconnectedHexes(hexes: Map<string, GameHex>): void {
       }
     }
   }
-
   for (const key of Array.from(hexes.keys())) {
-    if (!visited.has(key)) {
-      hexes.delete(key);
-    }
+    if (!visited.has(key)) hexes.delete(key);
   }
 }
 
 function carveWaterPockets(hexes: Map<string, GameHex>, radius: number, seed: number): void {
-  const pocketCount = Math.floor(radius * 0.8) + 2;
+  const pocketCount = Math.floor(radius * 1.2) + 3;
   const keys = Array.from(hexes.keys());
-
   for (let i = 0; i < pocketCount; i++) {
     const idx = Math.floor(seededNoise(i * 17, i * 31, seed + 7777) * keys.length);
     const randomKey = keys[idx % keys.length];
     const [q, r] = randomKey.split(',').map(Number);
     const dist = Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r));
-
     if (dist > 2 && dist < radius - 1) {
       hexes.delete(randomKey);
-
-      if (seededNoise(i, i * 3, seed + 8888) > 0.5) {
+      // Occasionally carve a 2nd adjacent hex for wider pockets
+      if (seededNoise(i, i * 3, seed + 8888) > 0.4) {
         const neighbors = getNeighbors(q, r);
         const ni = Math.floor(seededNoise(i * 5, i * 7, seed + 9999) * neighbors.length);
         const extraKey = hexKey(neighbors[ni].q, neighbors[ni].r);
         const extraDist = Math.max(Math.abs(neighbors[ni].q), Math.abs(neighbors[ni].r), Math.abs(neighbors[ni].q + neighbors[ni].r));
-        if (hexes.has(extraKey) && extraDist > 2) {
-          hexes.delete(extraKey);
-        }
+        if (hexes.has(extraKey) && extraDist > 2) hexes.delete(extraKey);
       }
     }
   }
-
   removeDisconnectedHexes(hexes);
 }
 
@@ -140,133 +233,123 @@ function carvePeninsulas(hexes: Map<string, GameHex>, radius: number, seed: numb
     const key = keys[i];
     const [q, r] = key.split(',').map(Number);
     const dist = Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r));
-
-    if (dist < radius * 0.6) continue;
-
+    if (dist < radius * 0.55) continue;
     const neighbors = getNeighbors(q, r);
     let landNeighbors = 0;
     for (const n of neighbors) {
       if (hexes.has(hexKey(n.q, n.r))) landNeighbors++;
     }
-
-    if (landNeighbors <= 1 && seededNoise(q * 13, r * 17, seed + 3333) > 0.3) {
+    if (landNeighbors <= 1 && seededNoise(q * 13, r * 17, seed + 3333) > 0.25) {
       hexes.delete(key);
     }
   }
-
   removeDisconnectedHexes(hexes);
 }
+
+// ─── Starting Positions ───────────────────────────────────────────────────────
 
 export function assignStartingPositions(
   hexes: Map<string, GameHex>,
   playerCount: number,
 ): void {
+  const clustersPerPlayer = 3;
+  const clusterSize = 6;
+  const totalClusters = playerCount * clustersPerPlayer;
+  const minSeedDist = clusterSize + 4; // enough space between cluster seeds
+
   const allHexes = Array.from(hexes.values());
-  const totalHexes = allHexes.length;
-  const hexesPerPlayer = Math.floor(totalHexes * 0.20);
 
-  const outerHexes = allHexes
-    .map((h) => {
-      const dist = Math.max(Math.abs(h.q), Math.abs(h.r), Math.abs(h.q + h.r));
-      return { hex: h, dist };
-    })
-    .filter((e) => e.dist >= 3)
-    .sort((a, b) => b.dist - a.dist);
+  // Pick seeds spread across the map with minimum distance constraint
+  const seeds = pickSpreadSeeds(allHexes, totalClusters, minSeedDist);
 
-  const startPositions: GameHex[] = [];
-  if (outerHexes.length >= playerCount) {
-    const angleStep = (2 * Math.PI) / playerCount;
-    for (let i = 0; i < playerCount; i++) {
-      const targetAngle = angleStep * i - Math.PI;
-      let best = outerHexes[0].hex;
-      let bestScore = -Infinity;
+  // Sort seeds by angle from center, then interleave player assignment
+  // so each player's territories are scattered across the map (not clumped)
+  seeds.sort((a, b) => Math.atan2(a.r, a.q) - Math.atan2(b.r, b.q));
 
-      for (const entry of outerHexes) {
-        const angle = Math.atan2(entry.hex.r + entry.hex.q * 0.5, entry.hex.q * Math.sqrt(3) / 2);
-        let angleDiff = Math.abs(angle - targetAngle);
-        if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
-        const score = entry.dist * 2 - angleDiff * 5;
-        if (score > bestScore) {
-          bestScore = score;
-          best = entry.hex;
-        }
-      }
-      startPositions.push(best);
-    }
-  } else {
-    for (let i = 0; i < playerCount; i++) {
-      startPositions.push(allHexes[Math.floor(allHexes.length / (playerCount + 1) * (i + 1))]);
+  for (let i = 0; i < seeds.length; i++) {
+    growStartingCluster(seeds[i], i % playerCount, clusterSize, hexes);
+  }
+}
+
+function pickSpreadSeeds(allHexes: GameHex[], count: number, minDist: number): GameHex[] {
+  const shuffled = shuffle(allHexes.slice());
+  const selected: GameHex[] = [];
+
+  // Try progressively relaxed distance constraints
+  for (let attempt = 0; attempt < 4 && selected.length < count; attempt++) {
+    const curDist = minDist * Math.pow(0.72, attempt);
+    for (const hex of shuffled) {
+      if (selected.length >= count) break;
+      if (selected.includes(hex)) continue;
+      const tooClose = selected.some(s => hexDist(hex.q, hex.r, s.q, s.r) < curDist);
+      if (!tooClose) selected.push(hex);
     }
   }
 
-  for (let p = 0; p < playerCount; p++) {
-    const start = startPositions[p];
-    const owned = new Set<string>();
-    const queue: string[] = [hexKey(start.q, start.r)];
-    owned.add(queue[0]);
+  return selected.slice(0, count);
+}
 
-    while (owned.size < hexesPerPlayer && queue.length > 0) {
-      const current = queue.shift()!;
-      const [cq, cr] = current.split(',').map(Number);
-      const neighbors = getNeighbors(cq, cr);
+function growStartingCluster(
+  start: GameHex,
+  player: number,
+  targetSize: number,
+  hexes: Map<string, GameHex>,
+): void {
+  if (start.owner !== null) return;
 
-      const shuffled = neighbors.slice();
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      for (const n of shuffled) {
-        const nk = hexKey(n.q, n.r);
-        const hex = hexes.get(nk);
-        if (hex && hex.owner === null && !owned.has(nk)) {
-          owned.add(nk);
-          queue.push(nk);
-          if (owned.size >= hexesPerPlayer) break;
-        }
-      }
-    }
+  const startKey = hexKey(start.q, start.r);
+  const owned = new Set<string>([startKey]);
+  const queue: string[] = [startKey];
 
-    for (const k of owned) {
-      const hex = hexes.get(k);
-      if (hex) {
-        hex.owner = p;
-        hex.hasNomad = false;
-      }
-    }
+  while (owned.size < targetSize && queue.length > 0) {
+    const current = queue.shift()!;
+    const [cq, cr] = current.split(',').map(Number);
+    const neighbors = shuffle(getNeighbors(cq, cr));
 
-    const ownedArr = Array.from(owned);
-    const borderHexes: string[] = [];
-    const interiorHexes: string[] = [];
+    for (const n of neighbors) {
+      if (owned.size >= targetSize) break;
+      const nk = hexKey(n.q, n.r);
+      const nhex = hexes.get(nk);
+      if (!nhex || nhex.owner !== null || owned.has(nk)) continue;
 
-    for (const k of ownedArr) {
-      const [hq, hr] = k.split(',').map(Number);
-      const neighbors = getNeighbors(hq, hr);
-      const isBorder = neighbors.some(n => {
-        const nk = hexKey(n.q, n.r);
-        const nh = hexes.get(nk);
-        return !nh || (nh.owner !== p);
+      // Enforce 1-hex buffer: candidate must not touch any already-owned hex
+      // outside this cluster — keeps all territories non-adjacent
+      const touchesExternal = getNeighbors(n.q, n.r).some(nn => {
+        const nnh = hexes.get(hexKey(nn.q, nn.r));
+        return nnh && nnh.owner !== null && !owned.has(hexKey(nn.q, nn.r));
       });
-      if (isBorder) {
-        borderHexes.push(k);
-      } else {
-        interiorHexes.push(k);
-      }
-    }
+      if (touchesExternal) continue;
 
-    const unitPlacements = borderHexes.length > 0 ? borderHexes : ownedArr;
-    const startingUnits = Math.min(4, unitPlacements.length);
-    const shuffledPlacements = unitPlacements.slice();
-    for (let i = shuffledPlacements.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffledPlacements[i], shuffledPlacements[j]] = [shuffledPlacements[j], shuffledPlacements[i]];
+      owned.add(nk);
+      queue.push(nk);
     }
+  }
 
-    for (let i = 0; i < startingUnits; i++) {
-      const hex = hexes.get(shuffledPlacements[i]);
-      if (hex && !hex.hasCapital) {
-        hex.unitTier = 0;
-        hex.unitMoved = false;
-      }
+  // Assign ownership, clear nomads and castles from starting hexes
+  for (const k of owned) {
+    const hex = hexes.get(k);
+    if (hex) {
+      hex.owner = player;
+      hex.hasNomad = false;
+      hex.hasCastle = false;
     }
+  }
+
+  // Place 1 peasant on a border hex
+  const ownedArr = Array.from(owned);
+  const borderHexes = ownedArr.filter(k => {
+    const [hq, hr] = k.split(',').map(Number);
+    return getNeighbors(hq, hr).some(n => {
+      const nh = hexes.get(hexKey(n.q, n.r));
+      return !nh || nh.owner !== player;
+    });
+  });
+
+  const placements = shuffle(borderHexes.length > 0 ? borderHexes : ownedArr);
+  const hex = hexes.get(placements[0]);
+  if (hex) {
+    hex.unitTier = 0;
+    hex.unitMoved = false;
+    hex.hasNomad = false;
   }
 }
