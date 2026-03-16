@@ -56,7 +56,11 @@ export function detectTerritories(hexes: Map<string, GameHex>): Territory[] {
           upkeep += UNIT_UPKEEP[h.unitTier];
         }
         if (h.hasCapital) {
-          capitalHex = coord;
+          if (!capitalHex) {
+            capitalHex = coord;
+          } else {
+            h.hasCapital = false; // remove duplicate — territories merged
+          }
         }
         if (!h.hasNomad) {
           income += 1;

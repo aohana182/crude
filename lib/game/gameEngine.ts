@@ -254,7 +254,16 @@ function tryUnitAction(state: GameState, from: HexCoord, to: HexCoord): GameStat
     newFrom.unitMoved = false;
 
     const newTerritories = detectTerritories(newHexes);
-    mergeTerritoryTreasuries(state.territories, newTerritories);
+    // Current player's territories may merge (conquest) — sum their treasuries
+    mergeTerritoryTreasuries(
+      state.territories.filter(t => t.owner === state.currentPlayer),
+      newTerritories,
+    );
+    // Enemy territories may split — largest fragment keeps treasury, cut-off fragments start at 0
+    syncTerritoryTreasuries(
+      state.territories.filter(t => t.owner !== state.currentPlayer),
+      newTerritories,
+    );
 
     if (capturedCapital && oldOwner !== null) {
       for (const t of newTerritories) {
