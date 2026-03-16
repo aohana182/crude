@@ -32,6 +32,7 @@ assets/sprites/     — PNG sprites per faction/tier
 - Think MECE and end-to-end — no gaps, no overlaps
 - No hacks without explicit user approval
 - Testing: design full test scenarios first → user approves → then execute
+- **Commit at end of every session** — any session that changes code ends with a git commit. Run tests first, then commit with a clear message. Do not rely on memory as a substitute for git history.
 
 ## If Falling Into a Cycle
 A cycle is: the same action failing twice, or 3+ steps with no meaningful progress.
