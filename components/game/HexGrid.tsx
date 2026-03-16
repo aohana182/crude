@@ -1,14 +1,39 @@
 import React, { useMemo, useCallback, useState, useRef } from 'react';
-import { View, StyleSheet, useWindowDimensions, Pressable, Platform } from 'react-native';
+import { View, StyleSheet, useWindowDimensions, Pressable, Platform, Image } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Svg from 'react-native-svg';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GameState, hexKey, Faction } from '@/lib/game/types';
-import { pixelToHex, getNeighbors } from '@/lib/game/hexUtils';
+import { pixelToHex, hexToPixel, getNeighbors } from '@/lib/game/hexUtils';
 import { HEX_SIZE, UNIT_STRENGTH, getTierForCombinedStrength, PEASANT_COST, CASTLE_COST } from '@/lib/game/constants';
 import { getHexDefenseStrength, buildHexTerritoryMap } from '@/lib/game/territoryManager';
 import HexTile from './HexTile';
 import Colors from '@/constants/colors';
+
+// All sprites rendered via RN Image (outside SVG) so PNG transparency works on Android
+const UNIT_SPRITES: Record<string, any> = {
+  coalition_0:  require('@/assets/sprites/coalition_1.png'),
+  coalition_1:  require('@/assets/sprites/coalition_2.png'),
+  coalition_2:  require('@/assets/sprites/coalition_3.png'),
+  coalition_3:  require('@/assets/sprites/coalition_4.png'),
+  insurgents_0: require('@/assets/sprites/insurgent_1_new.png'),
+  insurgents_1: require('@/assets/sprites/insurgent_2_new.png'),
+  insurgents_2: require('@/assets/sprites/insurgent_3_new.png'),
+  insurgents_3: require('@/assets/sprites/insurgent_4_new.png'),
+};
+
+const TOWER_SPRITES: Record<string, any> = {
+  coalition:  require('@/assets/sprites/tower_army.png'),
+  insurgents: require('@/assets/sprites/tower_insurgent.png'),
+};
+
+const CAPITAL_SPRITES: Record<string, any> = {
+  coalition:  require('@/assets/sprites/coalition_capital.png'),
+  insurgents: require('@/assets/sprites/insurgent_capital.png'),
+};
+
+const NOMAD_CAMP_SPRITE = require('@/assets/sprites/nomad_camp.png');
+const NEUTRAL_CASTLE_SPRITE = require('@/assets/sprites/neutral castle.png');
 
 interface HexGridProps {
   gameState: GameState;
@@ -302,14 +327,100 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
                   isSelected={key === selectedKey}
                   isPurchaseTarget={purchaseTargetKeys.has(key)}
                   targetType={targetType}
-                  factions={factions}
-                  currentPlayer={gameState.currentPlayer}
                 />
               );
             })}
           </Svg>
         </View>
       </GestureDetector>
+
+      {/* Sprite overlay — RN Image handles PNG alpha correctly on Android */}
+      {(() => {
+        const svgScale = Math.min(svgWidth / vb.w, svgHeight / vb.h);
+        const oxOff = (svgWidth  - vb.w * svgScale) / 2;
+        const oyOff = (svgHeight - vb.h * svgScale) / 2;
+        const hexS   = HEX_SIZE * svgScale; // hex circumradius in screen px
+        const bldSz  = hexS * 1.5;          // building sprite size
+        const unitSz = hexS * 1.3;          // unit sprite size
+
+        return (
+          <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+            {hexArray.map((hex) => {
+              const faction = hex.owner !== null ? factions[hex.owner] : null;
+              const { x: svgX, y: svgY } = hexToPixel(hex.q, hex.r, HEX_SIZE);
+              const sx = oxOff + (svgX - vb.x) * svgScale;
+              const sy = oyOff + (svgY - vb.y) * svgScale;
+              const key = hexKey(hex.q, hex.r);
+
+              let sprite: any = null;
+              let sz = bldSz;
+              let vOff = 0.5;
+
+              if (hex.unitTier !== null && faction) {
+                sprite = UNIT_SPRITES[`${faction}_${hex.unitTier}`];
+                sz = unitSz;
+                vOff = 0.4; // shift up less — centers on body, shield is above-left
+              } else if (hex.hasNomad && hex.unitTier === null && !hex.hasGrave) {
+                sprite = NOMAD_CAMP_SPRITE;
+              } else if (hex.hasCastle && hex.unitTier === null) {
+                sprite = faction ? TOWER_SPRITES[faction] : NEUTRAL_CASTLE_SPRITE;
+              } else if (hex.hasCapital && hex.unitTier === null && !hex.hasCastle && faction) {
+                sprite = CAPITAL_SPRITES[faction];
+              }
+
+              if (!sprite) return null;
+
+              const left = sx - sz / 2;
+              const top  = sy - sz * vOff;
+              const isSelectedUnit = key === selectedKey && hex.unitTier !== null;
+
+              return (
+                <React.Fragment key={`spr_${hex.q}_${hex.r}`}>
+                  <Image
+                    source={sprite}
+                    style={{
+                      position: 'absolute',
+                      width:  sz,
+                      height: sz,
+                      left,
+                      top,
+                      opacity: hex.unitMoved ? 0.45 : 1,
+                    }}
+                    resizeMode="contain"
+                  />
+                  {hex.unitMoved && hex.unitTier !== null && (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        width:  sz,
+                        height: sz,
+                        borderRadius: sz / 2,
+                        backgroundColor: 'rgba(0,0,0,0.3)',
+                        left,
+                        top,
+                      }}
+                    />
+                  )}
+                  {isSelectedUnit && (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        width:  sz * 1.15,
+                        height: sz * 1.15,
+                        borderRadius: sz * 0.575,
+                        borderWidth: Math.max(1.5, svgScale * 1.5),
+                        borderColor: '#D4A020',
+                        left: sx - sz * 0.575,
+                        top:  sy - sz * 0.575,
+                      }}
+                    />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </View>
+        );
+      })()}
 
       <Pressable
         style={({ pressed }) => [styles.resetButton, pressed && { opacity: 0.7 }]}
