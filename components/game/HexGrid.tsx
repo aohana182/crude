@@ -33,7 +33,7 @@ const CAPITAL_SPRITES: Record<string, any> = {
 };
 
 const NOMAD_CAMP_SPRITE = require('@/assets/sprites/nomad_camp.png');
-const NEUTRAL_CASTLE_SPRITE = require('@/assets/sprites/neutral castle.png');
+const NEUTRAL_CASTLE_SPRITE = require('@/assets/sprites/neutral_castle.png');
 
 interface HexGridProps {
   gameState: GameState;
