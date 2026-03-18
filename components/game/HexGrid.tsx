@@ -12,15 +12,17 @@ import Colors from '@/constants/colors';
 
 // All sprites rendered via RN Image (outside SVG) so PNG transparency works on Android
 const UNIT_SPRITES: Record<string, any> = {
-  coalition_0:  require('@/assets/sprites/coalition_1.png'),
-  coalition_1:  require('@/assets/sprites/coalition_2.png'),
-  coalition_2:  require('@/assets/sprites/coalition_3.png'),
-  coalition_3:  require('@/assets/sprites/coalition_4.png'),
-  insurgents_0: require('@/assets/sprites/insurgent_1_new.png'),
-  insurgents_1: require('@/assets/sprites/insurgent_2_new.png'),
-  insurgents_2: require('@/assets/sprites/insurgent_3_new.png'),
-  insurgents_3: require('@/assets/sprites/insurgent_4_new.png'),
+  coalition_0:  require('@/assets/sprites/coalition_t0.png'),
+  coalition_1:  require('@/assets/sprites/coalition_t1.png'),
+  coalition_2:  require('@/assets/sprites/coalition_t2.png'),
+  coalition_3:  require('@/assets/sprites/coalition_t3.png'),
+  insurgents_0: require('@/assets/sprites/insurgents_t0.png'),
+  insurgents_1: require('@/assets/sprites/insurgents_t1.png'),
+  insurgents_2: require('@/assets/sprites/insurgents_t2.png'),
+  insurgents_3: require('@/assets/sprites/insurgents_t3.png'),
 };
+// Cell aspect ratio: 176×192 per sprite
+const CELL_ASPECT = 192 / 176;
 
 const TOWER_SPRITES: Record<string, any> = {
   coalition:  require('@/assets/sprites/tower_army.png'),
@@ -340,8 +342,8 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
         const oxOff = (svgWidth  - vb.w * svgScale) / 2;
         const oyOff = (svgHeight - vb.h * svgScale) / 2;
         const hexS   = HEX_SIZE * svgScale; // hex circumradius in screen px
-        const bldSz  = hexS * 1.5;          // building sprite size
-        const unitSz = hexS * 1.3;          // unit sprite size
+        const bldSz  = hexS * 1.8;          // building sprite size
+        const unitSz = hexS * 2.24;         // unit sprite size (2.8 × 0.8)
 
         return (
           <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
@@ -352,27 +354,30 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
               const sy = oyOff + (svgY - vb.y) * svgScale;
               const key = hexKey(hex.q, hex.r);
 
+              // Determine sprite
               let sprite: any = null;
-              let sz = bldSz;
+              let spriteW = bldSz;
+              let spriteH = bldSz;
               let vOff = 0.5;
 
               if (hex.unitTier !== null && faction) {
                 sprite = UNIT_SPRITES[`${faction}_${hex.unitTier}`];
-                sz = unitSz;
-                vOff = 0.4; // shift up less — centers on body, shield is above-left
-              } else if (hex.hasNomad && hex.unitTier === null && !hex.hasGrave) {
+                spriteW = unitSz;
+                spriteH = unitSz * CELL_ASPECT;
+                vOff = 0.5;
+              } else if (hex.hasNomad && !hex.hasGrave) {
                 sprite = NOMAD_CAMP_SPRITE;
-              } else if (hex.hasCastle && hex.unitTier === null) {
+              } else if (hex.hasCastle) {
                 sprite = faction ? TOWER_SPRITES[faction] : NEUTRAL_CASTLE_SPRITE;
-              } else if (hex.hasCapital && hex.unitTier === null && !hex.hasCastle && faction) {
+              } else if (hex.hasCapital && !hex.hasCastle && faction) {
                 sprite = CAPITAL_SPRITES[faction];
               }
 
               if (!sprite) return null;
 
-              const left = sx - sz / 2;
-              const top  = sy - sz * vOff;
               const isSelectedUnit = key === selectedKey && hex.unitTier !== null;
+              const left = sx - spriteW / 2;
+              const top  = sy - spriteH * vOff;
 
               return (
                 <React.Fragment key={`spr_${hex.q}_${hex.r}`}>
@@ -380,40 +385,23 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
                     source={sprite}
                     style={{
                       position: 'absolute',
-                      width:  sz,
-                      height: sz,
-                      left,
-                      top,
+                      width: spriteW, height: spriteH,
+                      left, top,
                       opacity: hex.unitMoved ? 0.45 : 1,
                     }}
                     resizeMode="contain"
                   />
-                  {hex.unitMoved && hex.unitTier !== null && (
-                    <View
-                      style={{
-                        position: 'absolute',
-                        width:  sz,
-                        height: sz,
-                        borderRadius: sz / 2,
-                        backgroundColor: 'rgba(0,0,0,0.3)',
-                        left,
-                        top,
-                      }}
-                    />
-                  )}
+
                   {isSelectedUnit && (
-                    <View
-                      style={{
-                        position: 'absolute',
-                        width:  sz * 1.15,
-                        height: sz * 1.15,
-                        borderRadius: sz * 0.575,
-                        borderWidth: Math.max(1.5, svgScale * 1.5),
-                        borderColor: '#D4A020',
-                        left: sx - sz * 0.575,
-                        top:  sy - sz * 0.575,
-                      }}
-                    />
+                    <View style={{
+                      position: 'absolute',
+                      width: spriteW * 1.2, height: spriteH * 1.1,
+                      borderRadius: spriteW * 0.6,
+                      borderWidth: Math.max(1.5, svgScale * 1.5),
+                      borderColor: '#D4A020',
+                      left: sx - spriteW * 0.6,
+                      top:  sy - spriteH * 0.55,
+                    }} />
                   )}
                 </React.Fragment>
               );

@@ -1,16 +1,21 @@
-# Crude
+# Crude — Hex Strategy
 
-A turn-based hex territory strategy game for Android, built with Expo React Native. Inspired by the classic Slay game.
+A turn-based hex strategy game for mobile, built with Expo React Native.
+Inspired by the classic [Slay](http://www.windowsgames.co.uk/slay.html) by Sean O'Connor.
 
-## Gameplay
+**This project is vibe coded.** Built entirely through AI-human collaboration (Claude Code) — no traditional dev team. From game logic and map generation to AI and UI, every system was designed and iterated with AI assistance.
 
-Two factions fight for control of an oil-rich desert island. Capture territory, manage your economy, and crush your opponent.
+---
 
-- **Coalition** (blue) vs **Insurgents** (brown)
-- Buy units, build castles, combine units into stronger tiers
-- Each territory earns oil per turn; units cost upkeep
-- Go bankrupt → your units die
-- Capture all enemy territory to win
+## Concept
+
+Two factions fight for control of an oil-rich island. Capture hexes, build units, expand your territory, and bankrupt your opponent.
+
+- **Factions:** Coalition vs Insurgents
+- **Map:** Procedurally generated island (organic shape, no two games alike)
+- **Economy:** Hex income → treasury → units and castles
+- **Units:** 4 tiers, combine two same-tier units to promote
+- **Neutral threats:** Nomad camps spread and harass undefended land
 
 ### Units
 
@@ -21,43 +26,71 @@ Two factions fight for control of an oil-rich desert island. Capture territory, 
 | 3 | Lieutenant | Takfiri | 18 | 3 |
 | 4 | Major | Salafi | 54 | 4 |
 
-Combine two same-tier units → next tier. Movement within your territory is free. Attacks and nomad clearing cost your action for that unit.
+Movement within your territory is free. Attacks and nomad clearing cost the unit's action for that turn.
 
-## Running
+---
+
+## Status: v0.1 — Playable Prototype
+
+Core gameplay is complete:
+
+- Full economy loop (income, upkeep, bankruptcy, graves)
+- Combat, territory splitting and merging
+- Neutral castle capture
+- Nomad camp spread mechanics
+- Human vs AI
+
+---
+
+## Looking for Partners
+
+This project is looking for collaborators to take it from playable prototype to polished product. Open areas:
+
+**Graphics & Art**
+Current sprites are functional but need a proper visual identity. Looking for someone to create a cohesive style — units, terrain, UI elements.
+
+**Difficulty Levels**
+The AI plays at a single fixed level. Need Easy / Normal / Hard / Brutal with meaningfully different behaviour.
+
+**New Mechanics**
+Ideas on the table:
+- Faction asymmetry (coalition and insurgents play differently)
+- Fog of war
+- Resource types beyond oil
+- Campaign / scenario mode
+- Multiplayer (local pass-and-play or async)
+
+If you're interested, open an issue or reach out directly.
+
+---
+
+## Running Locally
 
 ```bash
 npm install
 npx expo start
 ```
 
-Scan the QR code with Expo Go (Android).
+Scan the QR code with Expo Go (Android/iOS) or run on a simulator.
+
+---
 
 ## Project Structure
 
 ```
-lib/game/
-  gameEngine.ts        — core state machine
-  aiPlayer.ts          — AI logic
-  territoryManager.ts  — territory detection, economy, defense
-  mapGenerator.ts      — island map generation
-  hexUtils.ts          — hex math
-  constants.ts         — game constants
-  types.ts             — TypeScript types
-
-components/game/
-  HexGrid.tsx          — SVG map + gestures + sprite overlay
-  HexTile.tsx          — per-hex SVG polygon + indicators
-  ActionPanel.tsx      — buy, combine, end turn UI
-  StatusBar.tsx        — turn/player info
-  GameOverlay.tsx      — game over screen
-
-assets/sprites/        — PNG sprites (units, buildings, capitals)
-__tests__/             — Jest test suite (93 tests)
+lib/game/          — game logic (engine, AI, territory, map generation)
+components/game/   — UI components (hex grid, action panel, overlays)
+assets/sprites/    — unit and building sprites
+scripts/           — sprite processing tools (background removal, scaling)
 ```
+
+---
 
 ## Tech Stack
 
-- Expo SDK 54 / React Native 0.81
-- react-native-svg 15 (map rendering)
-- react-native-gesture-handler (pan/pinch/tap)
-- Jest + ts-jest (unit + simulation tests)
+- Expo SDK 54 / React Native 0.81.5
+- TypeScript
+- react-native-svg (hex grid rendering)
+- react-native-gesture-handler (pan, pinch, tap)
+- Custom seeded map generator with organic island shapes
+- Synchronous AI engine (~8ms per turn)

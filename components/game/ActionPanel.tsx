@@ -6,7 +6,7 @@ import { FACTIONS, PEASANT_COST, CASTLE_COST } from '@/lib/game/constants';
 import { getTerritoryForHex } from '@/lib/game/territoryManager';
 import Colors from '@/constants/colors';
 
-const UNITS_SPRITE = require('@/assets/sprites/units.png');
+const UNITS_SPRITE = require('@/assets/sprites/units_nobg.png'); // background-removed sheet
 // Row in sprite sheet: coalition=0, insurgents=1 (tier-0 is always col 0)
 const FACTION_ROW: Record<string, number> = { coalition: 0, insurgents: 1 };
 

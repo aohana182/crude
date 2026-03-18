@@ -37,25 +37,36 @@ function buildIslandShape(radius: number): { hexes: Map<string, GameHex>; seed: 
   const hexes = new Map<string, GameHex>();
   const seed = Math.floor(Math.random() * 100000);
 
+  // Random ellipse shape per game: orientation + aspect ratio
+  // This breaks the hex-symmetry and produces varied island outlines
+  const angle     = seededNoise(1, 2, seed) * Math.PI;           // 0–180°
+  const stretch   = 0.50 + seededNoise(3, 4, seed) * 0.38;       // 0.50–0.88 (how squashed)
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+
   for (let q = -radius; q <= radius; q++) {
     for (let r = -radius; r <= radius; r++) {
       if (Math.abs(q + r) > radius) continue;
 
-      const dist = Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r));
-      const normalizedDist = dist / radius;
+      // Axial → cartesian (flat-top hex)
+      const cx = q + r * 0.5;
+      const cy = r * 0.866;
 
-      // 4 noise octaves for dramatic, irregular coastline
-      const n1 = seededNoise(q, r, seed) * 0.40;
-      const n2 = seededNoise(q * 2 + 5, r * 2 + 11, seed + 999) * 0.28;
+      // Rotate then squash to get ellipse-based distance
+      const rx = (cx * cos + cy * sin);
+      const ry = (-cx * sin + cy * cos) * stretch;
+      const normalizedDist = Math.sqrt(rx * rx + ry * ry) / radius;
+
+      // 4 noise octaves — higher amplitude so noise shapes interior too
+      const n1 = seededNoise(q, r, seed) * 0.38;
+      const n2 = seededNoise(q * 2 + 5, r * 2 + 11, seed + 999) * 0.26;
       const n3 = seededNoise(q * 5 + 17, r * 5 + 23, seed + 2222) * 0.20;
-      const n4 = seededNoise(q * 11 + 37, r * 11 + 43, seed + 4444) * 0.12;
+      const n4 = seededNoise(q * 11 + 37, r * 11 + 43, seed + 4444) * 0.16;
       const totalNoise = n1 + n2 + n3 + n4;
 
-      // Sharper edge falloff → more dramatic peninsulas and bays
-      const edgeFactor = Math.pow(normalizedDist, 2.2);
-      const keepChance = 1.0 - edgeFactor + totalNoise * 0.80;
+      const edgeFactor = Math.pow(normalizedDist, 1.8);
+      const keepChance = 1.0 - edgeFactor + totalNoise * 0.90;
 
-      if (dist <= 2 || (keepChance > 0.40 && normalizedDist < 0.98)) {
+      if (normalizedDist < 0.12 || (keepChance > 0.42 && normalizedDist < 1.05)) {
         hexes.set(hexKey(q, r), {
           q, r,
           owner: null, unitTier: null, unitMoved: false,
