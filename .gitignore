@@ -42,3 +42,10 @@ yarn-error.*
 
 # Claude AI project instructions (internal)
 CLAUDE.md
+
+# Replit IDE config
+.replit
+replit.nix
+
+# Expo generated
+expo-env.d.ts
