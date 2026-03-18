@@ -39,3 +39,6 @@ yarn-error.*
 .vercel
 
 .env
+
+# Claude AI project instructions (internal)
+CLAUDE.md
