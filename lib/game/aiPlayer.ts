@@ -9,11 +9,27 @@ import {
   buildHexTerritoryMap,
 } from './territoryManager';
 
-export function executeAITurn(state: GameState): GameState {
+interface AIParams {
+  overkillPenalty: number;
+  buyDivisor: number;
+  buyCap: number;
+  combineAt: number;
+  castleDivisor: number;
+}
+
+const DEFAULT_PARAMS: AIParams = {
+  overkillPenalty: 3,
+  buyDivisor: 3,
+  buyCap: 6,
+  combineAt: 3,
+  castleDivisor: 10,
+};
+
+function runPolicy(state: GameState, params: AIParams): GameState {
   let newState = { ...state };
   const playerId = newState.currentPlayer;
 
-  newState = aiAttackEnemy(newState, playerId);
+  newState = aiAttackEnemy(newState, playerId, params);
   newState = aiExpandToNeutral(newState, playerId);
   newState = aiMoveUnitsToFront(newState, playerId);
 
@@ -22,9 +38,9 @@ export function executeAITurn(state: GameState): GameState {
   newState.territories = midTerritories;
 
   newState = aiChopTrees(newState, playerId);
-  newState = aiBuyPeasants(newState, playerId);
-  newState = aiCombineUnits(newState, playerId);
-  newState = aiBuyCastles(newState, playerId);
+  newState = aiBuyPeasants(newState, playerId, params);
+  newState = aiCombineUnits(newState, playerId, params);
+  newState = aiBuyCastles(newState, playerId, params);
 
   newState = aiSecondPassAttack(newState, playerId);
 
@@ -35,7 +51,72 @@ export function executeAITurn(state: GameState): GameState {
   return newState;
 }
 
-function aiAttackEnemy(state: GameState, playerId: number): GameState {
+function cloneForSim(state: GameState): GameState {
+  const hexes = new Map<string, GameHex>();
+  for (const [k, h] of state.hexes) hexes.set(k, { ...h });
+  return { ...state, hexes, territories: state.territories.map(t => ({ ...t })) };
+}
+
+function evaluate(state: GameState, me: number): number {
+  let hexes = 0, oppHexes = 0, strength = 0, oppStrength = 0, capitals = 0, oppCapitals = 0;
+  for (const h of state.hexes.values()) {
+    if (h.owner === null) continue;
+    const mine = h.owner === me;
+    if (mine) hexes++; else oppHexes++;
+    if (h.unitTier !== null) {
+      if (mine) strength += UNIT_STRENGTH[h.unitTier]; else oppStrength += UNIT_STRENGTH[h.unitTier];
+    }
+    if (h.hasCapital) { if (mine) capitals++; else oppCapitals++; }
+  }
+  let net = 0, oppNet = 0, treasury = 0, oppTreasury = 0;
+  for (const t of state.territories) {
+    if (t.owner === me) { net += t.income - t.upkeep; treasury += t.treasury; }
+    else { oppNet += t.income - t.upkeep; oppTreasury += t.treasury; }
+  }
+  return 3 * (hexes - oppHexes)
+    + 4 * (net - oppNet)
+    + 0.3 * (treasury - oppTreasury)
+    + 2 * (strength - oppStrength)
+    + 15 * (capitals - oppCapitals);
+}
+
+function randomParams(): AIParams {
+  const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
+  return {
+    overkillPenalty: pick([0, 3]),
+    buyDivisor: pick([1.5, 2, 3]),
+    buyCap: pick([6, 10, 14]),
+    combineAt: pick([2, 3, 4, 99]),
+    castleDivisor: pick([6, 10, 999]),
+  };
+}
+
+const CANDIDATES = 6;
+
+export function executeAITurn(state: GameState): GameState {
+  const me = state.currentPlayer;
+  const opp = (me + 1) % state.players.length;
+
+  let best: GameState | null = null;
+  let bestScore = -Infinity;
+
+  for (let i = 0; i < CANDIDATES; i++) {
+    const params = i === 0 ? DEFAULT_PARAMS : randomParams();
+    const plan = runPolicy(cloneForSim(state), params);
+
+    const reply = runPolicy({ ...cloneForSim(plan), currentPlayer: opp }, DEFAULT_PARAMS);
+    const score = 0.4 * evaluate(plan, me) + evaluate(reply, me);
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = plan;
+    }
+  }
+
+  return best!;
+}
+
+function aiAttackEnemy(state: GameState, playerId: number, params: AIParams): GameState {
   let changed = true;
   let iterations = 0;
 
@@ -67,7 +148,7 @@ function aiAttackEnemy(state: GameState, playerId: number): GameState {
         if (wouldSplitTerritory) score += 12;
 
         const excessStrength = UNIT_STRENGTH[hex.unitTier] - defense;
-        score += excessStrength;
+        score -= excessStrength * params.overkillPenalty;
 
         const connectsToOwnTerritory = neighbors.some(nn => {
           const nnh = state.hexes.get(hexKey(nn.q, nn.r));
@@ -373,13 +454,13 @@ function aiChopTrees(state: GameState, playerId: number): GameState {
   return state;
 }
 
-function aiBuyPeasants(state: GameState, playerId: number): GameState {
+function aiBuyPeasants(state: GameState, playerId: number, params: AIParams): GameState {
   const territories = state.territories.filter(t => t.owner === playerId);
 
   for (const territory of territories) {
     const netIncome = territory.income - territory.upkeep;
 
-    const maxBuy = Math.max(1, Math.min(6, Math.floor(netIncome / 3)));
+    const maxBuy = Math.max(1, Math.min(params.buyCap, Math.floor(netIncome / params.buyDivisor)));
 
     let bought = 0;
 
@@ -436,7 +517,7 @@ function aiBuyPeasants(state: GameState, playerId: number): GameState {
   return state;
 }
 
-function aiBuyCastles(state: GameState, playerId: number): GameState {
+function aiBuyCastles(state: GameState, playerId: number, params: AIParams): GameState {
   const territories = state.territories.filter(t => t.owner === playerId);
 
   for (const territory of territories) {
@@ -451,7 +532,7 @@ function aiBuyCastles(state: GameState, playerId: number): GameState {
       return hex && hex.hasCastle;
     }).length;
 
-    const maxCastles = Math.max(1, Math.floor(territory.hexes.length / 10));
+    const maxCastles = Math.max(1, Math.floor(territory.hexes.length / params.castleDivisor));
     if (castleCount >= maxCastles) continue;
 
     let bestHex: HexCoord | null = null;
@@ -501,7 +582,7 @@ function aiBuyCastles(state: GameState, playerId: number): GameState {
   return state;
 }
 
-function aiCombineUnits(state: GameState, playerId: number): GameState {
+function aiCombineUnits(state: GameState, playerId: number, params: AIParams): GameState {
   const territories = state.territories.filter(t => t.owner === playerId);
 
   for (const territory of territories) {
@@ -537,7 +618,7 @@ function aiCombineUnits(state: GameState, playerId: number): GameState {
 
       const tier0Count = units.filter(u => u.hex.unitTier === 0).length;
       const tier1Count = units.filter(u => u.hex.unitTier === 1).length;
-      const shouldCombine = needsStrongerUnit || tier0Count >= 3 || tier1Count >= 3;
+      const shouldCombine = needsStrongerUnit || tier0Count >= params.combineAt || tier1Count >= params.combineAt;
 
       if (!shouldCombine) continue;
 
