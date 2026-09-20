@@ -13,7 +13,7 @@ Two factions fight for control of an oil-rich island. Capture hexes, build units
 
 - **Factions:** Coalition vs Insurgents
 - **Map:** Procedurally generated island (organic shape, no two games alike)
-- **Economy:** Hex income → treasury → units and castles
+- **Economy:** Hex income → treasury → units and castles. Each territory earns 1 per tree-free hex up to 10, then half a credit per extra hex (a soft cap that stops big territories snowballing)
 - **Units:** 4 tiers, combine two units to promote (strengths add: 1+1, 1+2, 1+3, 2+2)
 - **Neutral threats:** Nomad camps spread and harass undefended land
 

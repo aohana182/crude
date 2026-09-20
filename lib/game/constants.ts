@@ -64,6 +64,15 @@ export const TERRITORY_COLORS = [
 export const HEX_SIZE = 18;
 export const HEX_GAP = 1;
 
+export const INCOME_SOFT_CAP = 10;
+export const INCOME_SOFT_CAP_RATE = 0.5;
+
+/** Each territory earns 1 per tree-free hex up to the cap, then half a credit per extra hex. */
+export function territoryIncome(productiveHexes: number): number {
+  if (productiveHexes <= INCOME_SOFT_CAP) return productiveHexes;
+  return INCOME_SOFT_CAP + Math.floor((productiveHexes - INCOME_SOFT_CAP) * INCOME_SOFT_CAP_RATE);
+}
+
 export function attackerWins(attackStrength: number, defenseStrength: number): boolean {
   return attackStrength >= defenseStrength;
 }

@@ -1,4 +1,4 @@
-import { getTierForCombinedStrength, UNIT_STRENGTH, UNIT_UPKEEP } from '../lib/game/constants';
+import { getTierForCombinedStrength, territoryIncome, INCOME_SOFT_CAP, UNIT_STRENGTH, UNIT_UPKEEP } from '../lib/game/constants';
 
 describe('getTierForCombinedStrength', () => {
   it('two tier-0 units (1+1) combine into tier-1', () => {
@@ -43,5 +43,19 @@ describe('UNIT_UPKEEP', () => {
     for (let i = 1; i < UNIT_UPKEEP.length; i++) {
       expect(UNIT_UPKEEP[i]).toBeGreaterThanOrEqual(UNIT_UPKEEP[i - 1] * 3);
     }
+  });
+});
+
+describe('territoryIncome', () => {
+  it('pays 1 per hex up to the soft cap', () => {
+    expect(territoryIncome(0)).toBe(0);
+    expect(territoryIncome(6)).toBe(6);
+    expect(territoryIncome(INCOME_SOFT_CAP)).toBe(INCOME_SOFT_CAP);
+  });
+
+  it('pays half rate (rounded down) beyond the soft cap', () => {
+    expect(territoryIncome(INCOME_SOFT_CAP + 1)).toBe(INCOME_SOFT_CAP);
+    expect(territoryIncome(INCOME_SOFT_CAP + 2)).toBe(INCOME_SOFT_CAP + 1);
+    expect(territoryIncome(30)).toBe(20);
   });
 });
