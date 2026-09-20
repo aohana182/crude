@@ -64,6 +64,10 @@ export const TERRITORY_COLORS = [
 export const HEX_SIZE = 18;
 export const HEX_GAP = 1;
 
+export function attackerWins(attackStrength: number, defenseStrength: number): boolean {
+  return attackStrength >= defenseStrength;
+}
+
 /**
  * Classic Slay combination rule: two units of the same tier combine into
  * the next tier. Different tiers cannot combine. Returns -1 if invalid.

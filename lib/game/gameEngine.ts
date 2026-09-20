@@ -12,7 +12,7 @@ import {
   buildHexTerritoryMap,
 } from './territoryManager';
 import { executeAITurn } from './aiPlayer';
-import { PEASANT_COST, CASTLE_COST, UNIT_UPKEEP, UNIT_STRENGTH, PLAYER_COLORS, getTierForCombinedStrength } from './constants';
+import { PEASANT_COST, CASTLE_COST, UNIT_UPKEEP, UNIT_STRENGTH, PLAYER_COLORS, getTierForCombinedStrength, attackerWins } from './constants';
 import { getNeighbors, findConnectedRegion, hexToPixel } from './hexUtils';
 
 function computeMapBounds(hexes: Map<string, GameHex>): MapBounds {
@@ -234,8 +234,7 @@ function tryUnitAction(state: GameState, from: HexCoord, to: HexCoord): GameStat
     const hexTerritoryMap = buildHexTerritoryMap(state.territories);
     const defense = getHexDefenseStrength(to.q, to.r, state.hexes, hexTerritoryMap);
 
-    // strict < so equal strength resolves to attacker win (classic Slay)
-    if (unitStrength < defense) return state;
+    if (!attackerWins(unitStrength, defense)) return state;
 
     const capturedCapital = toHex.hasCapital;
     const oldOwner = toHex.owner;
@@ -400,7 +399,7 @@ function cloneHexes(hexes: Map<string, GameHex>): Map<string, GameHex> {
   return newMap;
 }
 
-export function endTurn(state: GameState): GameState {
+export function endTurn(state: GameState, ai: (s: GameState) => GameState = executeAITurn): GameState {
   const hexes = cloneHexes(state.hexes);
   const players = state.players.map(p => ({ ...p }));
 
@@ -478,7 +477,7 @@ export function endTurn(state: GameState): GameState {
         purchaseType: null,
         combineMode: false,
       };
-      aiState = executeAITurn(aiState);
+      aiState = ai(aiState);
 
       const aiHexes = cloneHexes(aiState.hexes);
 

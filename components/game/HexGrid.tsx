@@ -5,7 +5,7 @@ import Svg from 'react-native-svg';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GameState, hexKey, Faction } from '@/lib/game/types';
 import { pixelToHex, hexToPixel, getNeighbors } from '@/lib/game/hexUtils';
-import { HEX_SIZE, UNIT_STRENGTH, getTierForCombinedStrength, PEASANT_COST, CASTLE_COST } from '@/lib/game/constants';
+import { HEX_SIZE, UNIT_STRENGTH, getTierForCombinedStrength, attackerWins, PEASANT_COST, CASTLE_COST } from '@/lib/game/constants';
 import { getHexDefenseStrength, buildHexTerritoryMap } from '@/lib/game/territoryManager';
 import HexTile from './HexTile';
 import Colors from '@/constants/colors';
@@ -278,8 +278,7 @@ export default function HexGrid({ gameState, onHexPress }: HexGridProps) {
         targets.set(key, 'attack');
       } else {
         const defense = getHexDefenseStrength(hex.q, hex.r, gameState.hexes, hexTerritoryMap);
-        // strict < so equal strength resolves to attacker win (classic Slay)
-        if (unitStrength >= defense) targets.set(key, 'attack');
+        if (attackerWins(unitStrength, defense)) targets.set(key, 'attack');
       }
     }
 

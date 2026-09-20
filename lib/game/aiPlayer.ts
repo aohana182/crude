@@ -1,6 +1,6 @@
 import { GameHex, GameState, hexKey, HexCoord, Territory } from './types';
 import { getNeighbors, findConnectedRegion } from './hexUtils';
-import { PEASANT_COST, CASTLE_COST, UNIT_UPKEEP, UNIT_STRENGTH, CASTLE_DEFENSE, getTierForCombinedStrength } from './constants';
+import { PEASANT_COST, CASTLE_COST, UNIT_UPKEEP, UNIT_STRENGTH, CASTLE_DEFENSE, getTierForCombinedStrength, attackerWins } from './constants';
 import {
   getTerritoryForHex,
   getHexDefenseStrength,
@@ -56,8 +56,7 @@ function aiAttackEnemy(state: GameState, playerId: number): GameState {
         if (nh.owner === null || nh.owner === playerId) continue;
 
         const defense = getHexDefenseStrength(n.q, n.r, state.hexes, hexTerritoryMap);
-        // strict < so equal strength resolves to attacker win (classic Slay)
-        if (UNIT_STRENGTH[hex.unitTier] < defense) continue;
+        if (!attackerWins(UNIT_STRENGTH[hex.unitTier], defense)) continue;
 
         let score = 10;
         if (nh.hasCapital) score += 20;
@@ -160,7 +159,7 @@ function aiSecondPassAttack(state: GameState, playerId: number): GameState {
         }
       } else if (nh.owner !== playerId) {
         const defense = getHexDefenseStrength(n.q, n.r, state.hexes, hexTerritoryMap);
-        if (UNIT_STRENGTH[hex.unitTier] >= defense) { // equal strength: attacker wins
+        if (attackerWins(UNIT_STRENGTH[hex.unitTier], defense)) {
           let score = 10;
           if (nh.hasCapital) score += 20;
           if (nh.hasCastle) score += 15;
@@ -532,7 +531,7 @@ function aiCombineUnits(state: GameState, playerId: number): GameState {
           const defense = getHexDefenseStrength(n.q, n.r, state.hexes);
           const bestStrength = units.reduce((max, u) =>
             Math.max(max, u.hex.unitTier !== null ? UNIT_STRENGTH[u.hex.unitTier] : 0), 0);
-          return defense > bestStrength; // attacker wins on equal, only combine if genuinely blocked
+          return !attackerWins(bestStrength, defense);
         });
       });
 
