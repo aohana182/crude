@@ -1,26 +1,27 @@
 import { getTierForCombinedStrength, UNIT_STRENGTH, UNIT_UPKEEP } from '../lib/game/constants';
 
 describe('getTierForCombinedStrength', () => {
-  it('two tier-0 units combine into tier-1', () => {
+  it('two tier-0 units (1+1) combine into tier-1', () => {
     expect(getTierForCombinedStrength(0, 0)).toBe(1);
   });
 
-  it('two tier-1 units combine into tier-2', () => {
-    expect(getTierForCombinedStrength(1, 1)).toBe(2);
+  it('tier-0 + tier-1 (1+2) combine into tier-2', () => {
+    expect(getTierForCombinedStrength(0, 1)).toBe(2);
   });
 
-  it('two tier-2 units combine into tier-3', () => {
-    expect(getTierForCombinedStrength(2, 2)).toBe(3);
+  it('two tier-1 units (2+2) combine into tier-3', () => {
+    expect(getTierForCombinedStrength(1, 1)).toBe(3);
   });
 
-  it('returns -1 when combined strength exceeds max tier', () => {
-    expect(getTierForCombinedStrength(3, 3)).toBe(-1);
+  it('tier-0 + tier-2 (1+3) combine into tier-3', () => {
+    expect(getTierForCombinedStrength(0, 2)).toBe(3);
   });
 
-  it('returns -1 for mismatched tiers (only same-tier combining is valid)', () => {
-    expect(getTierForCombinedStrength(0, 2)).toBe(-1);
+  it('returns -1 when combined strength exceeds the strongest unit', () => {
     expect(getTierForCombinedStrength(0, 3)).toBe(-1);
     expect(getTierForCombinedStrength(1, 2)).toBe(-1);
+    expect(getTierForCombinedStrength(2, 2)).toBe(-1);
+    expect(getTierForCombinedStrength(3, 3)).toBe(-1);
   });
 
   it('is symmetric', () => {

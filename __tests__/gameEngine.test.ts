@@ -802,21 +802,21 @@ describe('combat — equal strength: attacker wins', () => {
   });
 });
 
-// ─── C: Combination rule — same tier only ────────────────────────────────────
+// ─── C: Combination rule — strengths add (classic Slay) ──────────────────────
 
-describe('unit combination — same tier only (classic Slay)', () => {
-  it('C5: different-tier units cannot combine', () => {
+describe('unit combination — strengths add (classic Slay)', () => {
+  it('C5: combinations whose strength exceeds a Baron are invalid', () => {
     const { getTierForCombinedStrength } = require('../lib/game/constants');
-    expect(getTierForCombinedStrength(0, 1)).toBe(-1);
-    expect(getTierForCombinedStrength(1, 2)).toBe(-1);
-    expect(getTierForCombinedStrength(0, 3)).toBe(-1);
+    expect(getTierForCombinedStrength(1, 2)).toBe(-1); // Spearman+Knight = 5
+    expect(getTierForCombinedStrength(0, 3)).toBe(-1); // Peasant+Baron = 5
   });
 
-  it('C1–C4: only same-tier combinations are valid, Baron+Baron is invalid', () => {
+  it('C1–C4: mixed tiers combine to the summed strength', () => {
     const { getTierForCombinedStrength } = require('../lib/game/constants');
     expect(getTierForCombinedStrength(0, 0)).toBe(1); // Peasant+Peasant → Spearman
-    expect(getTierForCombinedStrength(1, 1)).toBe(2); // Spearman+Spearman → Knight
-    expect(getTierForCombinedStrength(2, 2)).toBe(3); // Knight+Knight → Baron
+    expect(getTierForCombinedStrength(0, 1)).toBe(2); // Peasant+Spearman → Knight
+    expect(getTierForCombinedStrength(1, 1)).toBe(3); // Spearman+Spearman → Baron
+    expect(getTierForCombinedStrength(0, 2)).toBe(3); // Peasant+Knight → Baron
     expect(getTierForCombinedStrength(3, 3)).toBe(-1); // Baron+Baron → invalid
   });
 });

@@ -69,11 +69,11 @@ export function attackerWins(attackStrength: number, defenseStrength: number): b
 }
 
 /**
- * Classic Slay combination rule: two units of the same tier combine into
- * the next tier. Different tiers cannot combine. Returns -1 if invalid.
+ * Classic Slay combination rule: strengths add, and the result must be a
+ * valid unit strength. Returns the resulting tier, or -1 if invalid.
  */
 export function getTierForCombinedStrength(tierA: number, tierB: number): number {
-  if (tierA !== tierB) return -1;
-  if (tierA >= 3) return -1; // Baron + Baron: no tier 4
-  return tierA + 1;
+  const combined = UNIT_STRENGTH[tierA] + UNIT_STRENGTH[tierB];
+  if (combined > UNIT_STRENGTH[UNIT_STRENGTH.length - 1]) return -1;
+  return combined - 1;
 }
