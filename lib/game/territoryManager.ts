@@ -1,6 +1,6 @@
 import { GameHex, Territory, hexKey, coordFromKey, HexCoord } from './types';
 import { findConnectedRegion, getNeighbors } from './hexUtils';
-import { UNIT_UPKEEP, UNIT_STRENGTH, MIN_TERRITORY_SIZE, CASTLE_DEFENSE, territoryIncome } from './constants';
+import { UNIT_UPKEEP, UNIT_STRENGTH, MIN_TERRITORY_SIZE, CASTLE_DEFENSE } from './constants';
 
 /**
  * Kills units and removes capitals from territories that are too small
@@ -72,8 +72,6 @@ export function detectTerritories(hexes: Map<string, GameHex>): Territory[] {
       continue;
     }
 
-    income = territoryIncome(income);
-
     if (!capitalHex) {
       let bestHex = hexCoords[0];
       let bestDist = Infinity;
@@ -132,8 +130,6 @@ export function updateTerritoryEconomy(
         }
       }
     }
-
-    income = territoryIncome(income);
 
     const newTreasury = t.treasury + income - upkeep;
 

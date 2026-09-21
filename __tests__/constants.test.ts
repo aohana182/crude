@@ -1,4 +1,4 @@
-import { getTierForCombinedStrength, territoryIncome, INCOME_SOFT_CAP, UNIT_STRENGTH, UNIT_UPKEEP } from '../lib/game/constants';
+import { getTierForCombinedStrength, attackerWins, UNIT_STRENGTH, UNIT_UPKEEP } from '../lib/game/constants';
 
 describe('getTierForCombinedStrength', () => {
   it('two tier-0 units (1+1) combine into tier-1', () => {
@@ -46,16 +46,15 @@ describe('UNIT_UPKEEP', () => {
   });
 });
 
-describe('territoryIncome', () => {
-  it('pays 1 per hex up to the soft cap', () => {
-    expect(territoryIncome(0)).toBe(0);
-    expect(territoryIncome(6)).toBe(6);
-    expect(territoryIncome(INCOME_SOFT_CAP)).toBe(INCOME_SOFT_CAP);
+describe('attackerWins', () => {
+  it('requires the attacker to be strictly stronger', () => {
+    expect(attackerWins(2, 1)).toBe(true);
+    expect(attackerWins(1, 1)).toBe(false);
+    expect(attackerWins(1, 2)).toBe(false);
   });
 
-  it('pays half rate (rounded down) beyond the soft cap', () => {
-    expect(territoryIncome(INCOME_SOFT_CAP + 1)).toBe(INCOME_SOFT_CAP);
-    expect(territoryIncome(INCOME_SOFT_CAP + 2)).toBe(INCOME_SOFT_CAP + 1);
-    expect(territoryIncome(30)).toBe(20);
+  it('nothing beats a Baron', () => {
+    const baron = UNIT_STRENGTH[UNIT_STRENGTH.length - 1];
+    expect(attackerWins(baron, baron)).toBe(false);
   });
 });
