@@ -51,6 +51,12 @@ function runPolicy(state: GameState, params: AIParams): GameState {
   return newState;
 }
 
+// Bankruptcy kills every unit in the territory, so never commit to upkeep that
+// next turn's (slightly shrunk, trees grow) income plus treasury cannot pay.
+function canPayUpkeep(territory: Territory, treasury: number, upkeep: number): boolean {
+  return treasury + Math.floor(territory.income * 0.9) - upkeep >= 0;
+}
+
 function cloneForSim(state: GameState): GameState {
   const hexes = new Map<string, GameHex>();
   for (const [k, h] of state.hexes) hexes.set(k, { ...h });
@@ -125,46 +131,87 @@ function aiAttackEnemy(state: GameState, playerId: number, params: AIParams): Ga
     iterations++;
 
     const hexTerritoryMap = buildHexTerritoryMap(state.territories);
-    let bestAttack: { from: string; to: string; score: number } | null = null;
 
+    // Movement inside a territory is free, so any unit may attack from any usable hex of its own territory.
+    const unitsByTerritory = new Map<string, { key: string; tier: number }[]>();
     for (const [key, hex] of state.hexes) {
       if (hex.owner !== playerId || hex.unitTier === null || hex.unitMoved) continue;
+      const tid = hexTerritoryMap.get(key);
+      if (!tid) continue;
+      const list = unitsByTerritory.get(tid) ?? [];
+      list.push({ key, tier: hex.unitTier });
+      unitsByTerritory.set(tid, list);
+    }
+    if (unitsByTerritory.size === 0) break;
 
-      const neighbors = getNeighbors(hex.q, hex.r);
+    const defenseCache = new Map<string, number>();
+    let bestAttack: { unitKey: string; fromKey: string; to: string; score: number } | null = null;
+
+    for (const [fromKey, from] of state.hexes) {
+      if (from.owner !== playerId) continue;
+      const tid = hexTerritoryMap.get(fromKey);
+      const units = tid ? unitsByTerritory.get(tid) : undefined;
+      if (!units) continue;
+
+      const occupant = from.unitTier !== null;
+      const usable = occupant
+        ? !from.unitMoved
+        : !from.hasCastle && !from.hasNomad && !from.hasGrave;
+      if (!usable) continue;
+
+      const neighbors = getNeighbors(from.q, from.r);
       for (const n of neighbors) {
-        const nh = state.hexes.get(hexKey(n.q, n.r));
-        if (!nh) continue;
-        if (nh.owner === null || nh.owner === playerId) continue;
+        const toKey = hexKey(n.q, n.r);
+        const nh = state.hexes.get(toKey);
+        if (!nh || nh.owner === null || nh.owner === playerId) continue;
 
-        const defense = getHexDefenseStrength(n.q, n.r, state.hexes, hexTerritoryMap);
-        if (!attackerWins(UNIT_STRENGTH[hex.unitTier], defense)) continue;
+        let defense = defenseCache.get(toKey);
+        if (defense === undefined) {
+          defense = getHexDefenseStrength(n.q, n.r, state.hexes, hexTerritoryMap);
+          defenseCache.set(toKey, defense);
+        }
+
+        let chosen: { key: string; tier: number } | null = null;
+        for (const u of units) {
+          if (occupant && u.key !== fromKey) continue;
+          if (!attackerWins(UNIT_STRENGTH[u.tier], defense)) continue;
+          if (!chosen || u.tier < chosen.tier) chosen = u;
+        }
+        if (!chosen) continue;
 
         let score = 10;
         if (nh.hasCapital) score += 20;
         if (nh.hasCastle) score += 15;
         if (nh.unitTier !== null) score += 5 + nh.unitTier * 3;
 
-        const wouldSplitTerritory = checkTerritorySplit(n.q, n.r, nh.owner, state.hexes);
-        if (wouldSplitTerritory) score += 12;
+        if (checkTerritorySplit(n.q, n.r, nh.owner, state.hexes)) score += 12;
 
-        const excessStrength = UNIT_STRENGTH[hex.unitTier] - defense;
+        const excessStrength = UNIT_STRENGTH[chosen.tier] - defense;
         score -= excessStrength * params.overkillPenalty;
 
         const connectsToOwnTerritory = neighbors.some(nn => {
           const nnh = state.hexes.get(hexKey(nn.q, nn.r));
-          return nnh && nnh.owner === playerId && hexKey(nn.q, nn.r) !== hexKey(n.q, n.r);
+          return nnh && nnh.owner === playerId && hexKey(nn.q, nn.r) !== toKey;
         });
         if (connectsToOwnTerritory) score += 3;
 
         if (!bestAttack || score > bestAttack.score) {
-          bestAttack = { from: key, to: hexKey(n.q, n.r), score };
+          bestAttack = { unitKey: chosen.key, fromKey, to: toKey, score };
         }
       }
     }
 
     if (bestAttack) {
-      const fromHex = state.hexes.get(bestAttack.from)!;
+      const unitHex = state.hexes.get(bestAttack.unitKey)!;
+      const fromHex = state.hexes.get(bestAttack.fromKey)!;
       const toHex = state.hexes.get(bestAttack.to)!;
+
+      if (fromHex !== unitHex) {
+        fromHex.unitTier = unitHex.unitTier;
+        fromHex.unitMoved = false;
+        unitHex.unitTier = null;
+        unitHex.unitMoved = false;
+      }
 
       toHex.owner = playerId;
       toHex.unitTier = fromHex.unitTier;
@@ -495,10 +542,9 @@ function aiBuyPeasants(state: GameState, playerId: number, params: AIParams): Ga
       if (territory.treasury < PEASANT_COST) break;
 
       const projectedUpkeep = territory.upkeep + UNIT_UPKEEP[0] * (bought + 1);
-      const projectedNet = territory.income - projectedUpkeep;
       const projectedTreasury = territory.treasury - PEASANT_COST * (bought + 1);
 
-      if (projectedNet < -4 && projectedTreasury < Math.abs(projectedNet) * 3) break;
+      if (!canPayUpkeep(territory, projectedTreasury, projectedUpkeep)) break;
 
       const hex = state.hexes.get(hexKey(coord.q, coord.r));
       if (!hex || hex.unitTier !== null || hex.hasCastle || hex.hasCapital) continue;
@@ -639,8 +685,7 @@ function aiCombineUnits(state: GameState, playerId: number, params: AIParams): G
             - UNIT_UPKEEP[unitA.hex.unitTier]
             - UNIT_UPKEEP[unitB.hex.unitTier]
             + UNIT_UPKEEP[newTier];
-          const netAfter = territory.income - newUpkeep;
-          if (netAfter < -8 && territory.treasury < Math.abs(netAfter) * 2) continue;
+          if (!canPayUpkeep(territory, territory.treasury, newUpkeep)) continue;
 
           unitB.hex.unitTier = newTier;
           unitB.hex.unitMoved = true;

@@ -39,3 +39,19 @@ Source: Sean O'Connor's rules page, https://www.windowsgames.co.uk/slayRules.htm
 Open questions from the source: the rules page does not give starting money, hexes per player, terrain percentage or the AI's behaviour.
 
 Next: agree an approach with the user before changing any rules or AI.
+
+### 2026-09-21 — AI fixes needed after restoring strict attacks
+
+Under strict attacks + no income cap, AI self-play (60 games) gave 35% stalemates, turn-15 leader 82%. The "stalemates" were not real: one side held ~290 hexes, the other 4-10 hexes behind a castle (defence 2), and the leader could not finish.
+
+Diagnosed causes (from per-game snapshots, not guesses):
+- The AI attacked only from where its units stood. The engine lets a unit move anywhere inside its own territory for free and only the attack needs adjacency, so a Baron elsewhere on the island never reached the pocket. Fixed: `aiAttackEnemy` now considers every usable hex of the unit's territory as an attack origin and uses the weakest unit that beats the defence.
+- Overspending: purchases tolerated a net of -4 per turn, then trees grew and bankruptcy killed every unit (100+ graves in long games). Fixed: `canPayUpkeep` guard (treasury + 90% of income must cover the new upkeep) on peasant purchases and combines.
+
+Results (100+ games each, sides swapped, strict rules):
+- solvency guard alone vs previous AI: 55.8% wins / 8.3% losses / 35.8% draws. Did not fix stalemates.
+- plus repositioning attacks vs previous AI (`aiV2.ts`, local-only copy): 99.2% wins / 0% losses / 0.8% draws, median 21 turns.
+- new AI self-play: 0.8% draws, median 32 turns, turn-15 leader wins 92% (very snowbally, decided early), Baron reached in ~35% of games.
+- AI turn time 31ms average, 153ms worst on desktop; unmeasured on a phone.
+
+Not measured: human vs AI. Difficulty is now a judgement call for Avi to make by playing. Untouched knobs if it is too hard: `CANDIDATES` (best-of-K) in aiPlayer.ts; tree spread chance in `growTrees`.
