@@ -55,3 +55,7 @@ Results (100+ games each, sides swapped, strict rules):
 - AI turn time 31ms average, 153ms worst on desktop; unmeasured on a phone.
 
 Not measured: human vs AI. Difficulty is now a judgement call for Avi to make by playing. Untouched knobs if it is too hard: `CANDIDATES` (best-of-K) in aiPlayer.ts; tree spread chance in `growTrees`.
+
+### 2026-09-27 — Human verification on S24
+
+Avi played the arm64 test APK (`crude-s24-test.apk`, debug-signed, built from `feat/balance-and-ai` @ b64069c) on a real Samsung S24. Confirmed: much better, gameplay more exciting. This closes the one gap the simulations couldn't measure. Branch not yet merged to main or pushed; next step toward a Play Store update is a version bump (1.0.1 → 1.1.0, semver minor for a gameplay change) and `eas build --profile production`.
